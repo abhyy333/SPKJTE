@@ -26,8 +26,8 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
     );
   }
 
-  // 1. If route explicitly permits guest access in read-only mode
-  if (allowGuest && accessMode === 'GUEST') {
+  // 1. If route explicitly permits guest access in read-only mode (accessible to all)
+  if (allowGuest) {
     return children;
   }
 
@@ -48,6 +48,6 @@ export const RoleGuard: React.FC<RoleGuardProps> = ({
     return <ForbiddenPage />;
   }
 
-  // 4. Guest trying to access restricted admin route -> redirect to public dashboard
-  return <Navigate to="/dashboard" replace />;
+  // 4. Guest trying to access restricted route -> redirect to auth/login
+  return <Navigate to="/login" replace />;
 };

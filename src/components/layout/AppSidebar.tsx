@@ -282,6 +282,31 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         {/* Bottom Menu: Pengaturan & Collapse Toggle */}
         <div className="p-3 border-t border-slate-100 space-y-1 bg-white shrink-0">
+          {/* Admin Account Management */}
+          {role !== 'DOSEN' && role !== 'MAHASISWA' && (
+            <NavLink
+              to="/manajemen-akun"
+              title={collapsed ? 'Manajemen Akun' : undefined}
+              onClick={onCloseMobile}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group relative',
+                  isActive
+                    ? 'bg-blue-50 text-blue-600 font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                )
+              }
+            >
+              <Users className="w-5 h-5 text-slate-400 group-hover:text-slate-600 shrink-0" />
+              {!collapsed && <span>Manajemen Akun</span>}
+              {collapsed && (
+                <div className="fixed left-20 ml-2 px-2.5 py-1 bg-slate-900 text-white text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap">
+                  Manajemen Akun
+                </div>
+              )}
+            </NavLink>
+          )}
+
           <NavLink
             to="/pengaturan"
             title={collapsed ? 'Pengaturan' : undefined}

@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Profile, UserRole } from '../types';
 
 export const OWNER_EMAIL = 'abhyy333@gmail.com';
-export type AccessMode = 'GUEST' | 'OWNER_ADMIN';
+export type AccessMode = 'GUEST' | 'OWNER_ADMIN' | 'ADMIN' | 'DOSEN' | 'MAHASISWA';
 
 const STORAGE_PREVIEW_ROLE_KEY = 'spk_preview_role';
 
@@ -16,12 +16,20 @@ export interface AuthContextType {
   previewRole: UserRole | null;
   effectiveRole: UserRole | null;
   isOwnerAdmin: boolean;
+  isSystemOwner: boolean;
+  isAdmin: boolean;
+  isDosen: boolean;
+  isMahasiswa: boolean;
+  isGuest: boolean;
   accessMode: AccessMode;
   availablePreviewRoles: UserRole[];
   setPreviewRole: (role: UserRole | null) => void;
   exitPreview: () => void;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string; role?: UserRole; isOwner?: boolean }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string; isConfirmationRequired?: boolean; user?: User | null }>;
+  resetPassword: (email: string) => Promise<{ error?: string; success?: boolean }>;
+  updatePassword: (password: string) => Promise<{ error?: string; success?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -45,12 +53,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const actualRole: UserRole | null = profile?.role ?? null;
 
   // STRICT SECURITY RULE: Owner Admin check
-  const isOwnerAdmin =
-    !!user &&
-    user.email?.toLowerCase() === OWNER_EMAIL &&
-    profile?.role === 'ADMIN';
+  const isSystemOwner = !!user && user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+  const isOwnerAdmin = isSystemOwner && profile?.role === 'ADMIN';
+  const isAdmin = actualRole === 'ADMIN' || isOwnerAdmin;
+  const isDosen = actualRole === 'DOSEN';
+  const isMahasiswa = actualRole === 'MAHASISWA';
+  const isGuest = !user;
 
-  const accessMode: AccessMode = isOwnerAdmin ? 'OWNER_ADMIN' : 'GUEST';
+  const accessMode: AccessMode = isOwnerAdmin
+    ? 'OWNER_ADMIN'
+    : isAdmin
+    ? 'ADMIN'
+    : isDosen
+    ? 'DOSEN'
+    : isMahasiswa
+    ? 'MAHASISWA'
+    : 'GUEST';
 
   // Role preview is strictly allowed ONLY for the verified owner admin
   const availablePreviewRoles: UserRole[] = React.useMemo(() => {
@@ -261,6 +279,107 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string
+  ): Promise<{ error?: string; isConfirmationRequired?: boolean; user?: User | null }> => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: 'Koneksi database belum dikonfigurasi. Tambahkan Supabase URL dan Publishable Key.',
+      };
+    }
+
+    try {
+      setLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = fullName.trim();
+
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: cleanName,
+            name: cleanName,
+          },
+        },
+      });
+
+      if (error) {
+        setLoading(false);
+        return { error: error.message };
+      }
+
+      if (data.user) {
+        // If session returned immediately (email confirmation disabled in Supabase)
+        if (data.session) {
+          setUser(data.user);
+          await fetchProfile(data.user);
+          setLoading(false);
+          return { user: data.user, isConfirmationRequired: false };
+        } else {
+          // Email confirmation is required by Supabase backend
+          setLoading(false);
+          return { user: data.user, isConfirmationRequired: true };
+        }
+      }
+
+      setLoading(false);
+      return { error: 'Gagal membuat akun. Silakan coba lagi.' };
+    } catch (err: any) {
+      setLoading(false);
+      return { error: err.message || 'Terjadi kesalahan sistem saat proses pendaftaran.' };
+    }
+  };
+
+  const resetPassword = async (email: string): Promise<{ error?: string; success?: boolean }> => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: 'Koneksi database belum dikonfigurasi.',
+      };
+    }
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const redirectUrl = `${window.location.origin}/reset-password`;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { error: err.message || 'Gagal mengirim email reset kata sandi.' };
+    }
+  };
+
+  const updatePassword = async (password: string): Promise<{ error?: string; success?: boolean }> => {
+    if (!isSupabaseConfigured()) {
+      return {
+        error: 'Koneksi database belum dikonfigurasi.',
+      };
+    }
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password,
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return { error: err.message || 'Gagal memperbarui kata sandi.' };
+    }
+  };
+
   const signOut = async () => {
     try {
       if (isSupabaseConfigured()) {
@@ -290,12 +409,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         previewRole,
         effectiveRole,
         isOwnerAdmin,
+        isSystemOwner,
+        isAdmin,
+        isDosen,
+        isMahasiswa,
+        isGuest,
         accessMode,
         availablePreviewRoles,
         setPreviewRole,
         exitPreview,
         loading,
         signIn,
+        signUp,
+        resetPassword,
+        updatePassword,
         signOut,
         refreshProfile,
       }}

@@ -5,7 +5,9 @@ import { RoleGuard } from './RoleGuard';
 import { AppLayout } from '../components/layout/AppLayout';
 
 // Auth Pages
-import { LoginPage } from '../pages/auth/LoginPage';
+import { AuthPage } from '../pages/auth/AuthPage';
+import { ForgotPasswordPage } from '../pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from '../pages/auth/ResetPasswordPage';
 
 // Admin Pages
 import { AdminDashboard } from '../pages/admin/AdminDashboard';
@@ -21,6 +23,7 @@ import { ScheduleViewerPage } from '../pages/admin/ScheduleViewerPage';
 import { ExamSchedulePage } from '../pages/admin/ExamSchedulePage';
 import { ReportsPage } from '../pages/admin/ReportsPage';
 import { SettingsPage } from '../pages/admin/SettingsPage';
+import { AccountManagementPage } from '../pages/admin/AccountManagementPage';
 
 // Lecturer Pages
 import { LecturerDashboard } from '../pages/lecturer/LecturerDashboard';
@@ -49,8 +52,12 @@ export const AppRoutes: React.FC = () => {
 
   return (
     <Routes>
-      {/* Public routes */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* Public Auth Routes */}
+      <Route path="/auth" element={<AuthPage />} />
+      <Route path="/login" element={<AuthPage defaultTab="login" />} />
+      <Route path="/register" element={<AuthPage defaultTab="register" />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/403" element={<ForbiddenPage />} />
 
       {/* Root redirect */}
@@ -68,6 +75,24 @@ export const AppRoutes: React.FC = () => {
         <Route path="/jadwal-perkuliahan" element={<ScheduleViewerPage />} />
         <Route path="/jadwal-ujian" element={<ExamSchedulePage />} />
         <Route path="/pengaturan" element={<SettingsPage />} />
+
+        {/* Account Management (Admin Only) */}
+        <Route
+          path="/manajemen-akun"
+          element={
+            <RoleGuard allowedRoles={['ADMIN']}>
+              <AccountManagementPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/pengaturan/akun"
+          element={
+            <RoleGuard allowedRoles={['ADMIN']}>
+              <AccountManagementPage />
+            </RoleGuard>
+          }
+        />
 
         {/* Admin / Public Guest Read-Only Routes */}
         <Route

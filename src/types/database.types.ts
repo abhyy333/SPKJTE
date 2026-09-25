@@ -1,5 +1,21 @@
 export type UserRole = 'ADMIN' | 'DOSEN' | 'MAHASISWA';
 
+export interface AuthorizedAccount {
+  email: string;
+  role: 'ADMIN' | 'DOSEN';
+  lecturer_id: string | null;
+  user_id: string | null;
+  is_active: boolean;
+  is_system_owner: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  claimed_at: string | null;
+  // joined relations
+  lecturer?: Lecturer | null;
+  profile?: Profile | null;
+}
+
 export interface Profile {
   id: string;
   role: UserRole;

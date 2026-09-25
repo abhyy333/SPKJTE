@@ -14,8 +14,11 @@ import {
   Check,
   RotateCcw,
   LogIn,
+  UserPlus,
   AlertCircle,
   ShieldCheck,
+  Crown,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
@@ -39,6 +42,10 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
     previewRole,
     effectiveRole,
     isOwnerAdmin,
+    isSystemOwner,
+    isAdmin,
+    isDosen,
+    isMahasiswa,
     accessMode,
     availablePreviewRoles,
     setPreviewRole,
@@ -90,7 +97,14 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
     (isOwnerAdmin ? 'Admin Jurusan' : 'Tamu');
 
   const isPreviewing = Boolean(previewRole && previewRole !== actualRole);
-  const departmentDisplay = 'Teknik Elektro';
+
+  const getRoleLabel = () => {
+    if (isSystemOwner) return 'System Owner';
+    if (role === 'ADMIN') return 'Administrator';
+    if (role === 'DOSEN') return 'Dosen';
+    if (role === 'MAHASISWA') return 'Mahasiswa';
+    return 'Pengguna';
+  };
 
   return (
     <>
@@ -149,15 +163,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
             </div>
           )}
 
-          {/* Non-owner user banner */}
-          {user && !isOwnerAdmin && (
-            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-2xs text-amber-800">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Anda masuk dalam mode baca saja.</span>
-            </div>
-          )}
-
-          {/* GUEST: "Masuk Admin" button */}
+          {/* GUEST: "Masuk" and "Daftar" buttons */}
           {!user && (
             <div className="flex items-center gap-2">
               <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
@@ -166,11 +172,17 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
               </div>
               <button
                 onClick={() => navigate('/login')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-2xs transition-colors cursor-pointer shrink-0"
-                title="Masuk sebagai Administrator"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-colors cursor-pointer shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Masuk Admin</span>
+                <span>Masuk</span>
+              </button>
+              <button
+                onClick={() => navigate('/register')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-2xs transition-colors cursor-pointer shrink-0"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Daftar</span>
               </button>
             </div>
           )}
@@ -206,7 +218,13 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                 aria-expanded={dropdownOpen}
               >
                 <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full font-semibold text-xs flex items-center justify-center shrink-0 ring-2 shadow-2xs ${
-                  isOwnerAdmin ? 'bg-blue-700 text-white ring-blue-100' : 'bg-slate-700 text-white ring-slate-100'
+                  isSystemOwner
+                    ? 'bg-amber-600 text-white ring-amber-100'
+                    : isAdmin
+                    ? 'bg-blue-700 text-white ring-blue-100'
+                    : isDosen
+                    ? 'bg-purple-700 text-white ring-purple-100'
+                    : 'bg-slate-700 text-white ring-slate-100'
                 }`}>
                   {getInitials(displayName)}
                 </div>
@@ -215,7 +233,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                     {displayName}
                   </p>
                   <p className="text-2xs text-slate-400 font-medium tracking-tight">
-                    {isOwnerAdmin ? 'Admin Pemilik' : 'Read-Only'}
+                    {getRoleLabel()}
                   </p>
                 </div>
                 <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 shrink-0" />
@@ -229,14 +247,23 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                     <p className="text-xs font-bold text-slate-900 truncate">{displayName}</p>
                     <p className="text-2xs font-medium text-slate-500 truncate">{user.email}</p>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      {isOwnerAdmin ? (
+                      {isSystemOwner ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 text-3xs font-bold rounded border border-amber-200">
+                          <Crown className="w-3 h-3 text-amber-600" />
+                          System Owner
+                        </span>
+                      ) : isAdmin ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 text-3xs font-bold rounded">
                           <ShieldCheck className="w-3 h-3 text-blue-600" />
-                          Owner Admin
+                          Administrator
+                        </span>
+                      ) : isDosen ? (
+                        <span className="px-2 py-0.5 bg-purple-50 text-purple-700 text-3xs font-bold rounded">
+                          Dosen
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-3xs font-bold rounded">
-                          Mode Baca Saja
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-3xs font-bold rounded">
+                          Mahasiswa (Mode Baca)
                         </span>
                       )}
                       {isPreviewing && (
@@ -247,7 +274,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                     </div>
                   </div>
 
-                  {/* ROLE PREVIEW SWITCHER (Only visible for Owner Admin with multiple preview roles) */}
+                  {/* ROLE PREVIEW SWITCHER (Only visible for Owner Admin) */}
                   {isOwnerAdmin && availablePreviewRoles.length > 1 && (
                     <div className="py-2 border-b border-slate-100 bg-slate-50/70">
                       <div className="px-3.5 pb-1 text-2xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
@@ -299,6 +326,19 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
 
                   {/* Standard Links */}
                   <div className="py-1">
+                    {(isAdmin || isOwnerAdmin) && (
+                      <button
+                        onClick={() => {
+                          setDropdownOpen(false);
+                          navigate('/manajemen-akun');
+                        }}
+                        className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <Users className="w-4 h-4 text-slate-400" />
+                        Manajemen Akun & Akses
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
                         setDropdownOpen(false);
@@ -307,7 +347,7 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
                       className="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                     >
                       <Settings className="w-4 h-4 text-slate-400" />
-                      Pengaturan
+                      Pengaturan Sistem
                     </button>
 
                     <button
@@ -347,3 +387,4 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
     </>
   );
 };
+
