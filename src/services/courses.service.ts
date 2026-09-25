@@ -1,0 +1,332 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { Course, CourseOffering, CourseType } from '../types';
+import { parseSupabaseError } from '../lib/utils';
+
+export const coursesService = {
+  async getCourses(filters?: {
+    search?: string;
+    semester?: number | string;
+    category?: string;
+    courseType?: string;
+    kbkId?: string;
+    curriculumId?: string;
+    status?: string;
+  }): Promise<Course[]> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    let query = supabase
+      .from('courses')
+      .select(`
+        *,
+        kbk:kbk_id ( id, name, code ),
+        curriculum:curriculum_id ( id, name, year ),
+        course_offerings ( id )
+      `)
+      .order('semester', { ascending: true })
+      .order('code', { ascending: true, nullsFirst: false });
+
+    if (filters?.semester && filters.semester !== 'all') {
+      query = query.eq('semester', Number(filters.semester));
+    }
+    const targetType =
+      filters?.courseType && filters.courseType !== 'all'
+        ? filters.courseType
+        : filters?.category && filters.category !== 'all'
+        ? filters.category.toUpperCase()
+        : null;
+
+    if (targetType) {
+      query = query.eq('course_type', targetType);
+    }
+    if (filters?.kbkId && filters.kbkId !== 'all') {
+      query = query.eq('kbk_id', filters.kbkId);
+    }
+    if (filters?.curriculumId && filters.curriculumId !== 'all') {
+      query = query.eq('curriculum_id', filters.curriculumId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching courses:', error);
+      throw new Error(parseSupabaseError(error));
+    }
+
+    let results: Course[] = (data || []).map((row: any) => ({
+      ...row,
+      effective_sks: row.effective_sks ?? row.sks ?? 0,
+      sks: row.effective_sks ?? row.sks ?? 0,
+      course_type: row.course_type || 'WAJIB',
+      category: row.course_type === 'WAJIB' ? 'Wajib' : 'Pilihan',
+      offerings_count: row.course_offerings?.length || 0,
+    }));
+
+    if (filters?.search) {
+      const s = filters.search.toLowerCase().trim();
+      results = results.filter(
+        (c) =>
+          (c.name && c.name.toLowerCase().includes(s)) ||
+          (c.code && c.code.toLowerCase().includes(s))
+      );
+    }
+
+    if (filters?.status && filters.status !== 'all') {
+      if (filters.status === 'schedulable') {
+        results = results.filter((c) => c.is_schedulable && c.activity_type !== 'KKN');
+      } else if (filters.status === 'unschedulable') {
+        results = results.filter((c) => !c.is_schedulable || c.activity_type === 'KKN');
+      }
+    }
+
+    return results;
+  },
+
+  async getCourseById(id: string): Promise<{
+    course: Course;
+    offerings: CourseOffering[];
+  }> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    const { data: course, error: cErr } = await supabase
+      .from('courses')
+      .select(`
+        *,
+        kbk:kbk_id ( id, name, code ),
+        curriculum:curriculum_id ( id, name, year )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (cErr) throw new Error(parseSupabaseError(cErr));
+
+    const { data: offerings, error: oErr } = await supabase
+      .from('course_offerings')
+      .select(`
+        *,
+        course_offering_lecturers (
+          course_offering_id,
+          lecturer_id,
+          assignment_role,
+          lecturer:lecturer_id ( id, name, lecturer_code, nip )
+        )
+      `)
+      .eq('course_id', id)
+      .order('class_code', { ascending: true });
+
+    if (oErr) console.warn('Offerings fetch notice:', oErr);
+
+    return {
+      course: {
+        ...course,
+        effective_sks: course.effective_sks ?? course.sks ?? 0,
+        sks: course.effective_sks ?? course.sks ?? 0,
+      },
+      offerings: (offerings || []).map((o: any) => ({
+        ...o,
+        class_name: o.class_code || o.class_name,
+        lecturers: (o.course_offering_lecturers || []).map((col: any) => ({
+          ...col,
+          lecturer: col.lecturer
+            ? {
+                ...col.lecturer,
+                code: col.lecturer.lecturer_code || '',
+              }
+            : null,
+        })),
+      })),
+    };
+  },
+
+  async createCourse(data: Partial<Course>): Promise<Course> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    // Validation
+    if (!data.name || !data.name.trim()) {
+      throw new Error('Nama mata kuliah wajib diisi.');
+    }
+    const sksVal = Number(data.effective_sks || data.sks || 0);
+    if (sksVal < 1 || sksVal > 12) {
+      throw new Error('Bobot SKS harus antara 1 sampai 12 SKS.');
+    }
+    const semVal = Number(data.semester || 1);
+    if (semVal < 1 || semVal > 14) {
+      throw new Error('Semester harus antara 1 sampai 14.');
+    }
+
+    // KKN Rule:
+    const isKKN = data.activity_type === 'KKN' || data.name.toUpperCase().includes('KKN');
+    const isSchedulable = isKKN ? false : (data.is_schedulable ?? true);
+    const managedBy = isKKN ? 'LPPM' : (data.managed_by || 'JURUSAN');
+    const scope = isKKN ? 'ALL_KBK' : (data.scope || 'PROG_STUDI');
+
+    const courseType = (data.course_type as CourseType) || 'WAJIB';
+
+    const insertPayload: Record<string, any> = {
+      name: data.name.trim(),
+      code: data.code && data.code.trim() ? data.code.trim().toUpperCase() : null,
+      effective_sks: sksVal,
+      semester: semVal,
+      course_type: courseType,
+      activity_type: isKKN ? 'KKN' : (data.activity_type || 'KULIAH'),
+      is_schedulable: isSchedulable,
+      managed_by: managedBy,
+      scope: scope,
+      kbk_id: data.kbk_id || null,
+      curriculum_id: data.curriculum_id || null,
+      capacity_per_class: data.capacity_per_class || 40,
+      description: data.description?.trim() || null,
+      prerequisites: data.prerequisites?.trim() || null,
+    };
+
+    const { data: created, error } = await supabase
+      .from('courses')
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(parseSupabaseError(error, 'course_code'));
+    }
+
+    return created;
+  },
+
+  async updateCourse(id: string, data: Partial<Course>): Promise<Course> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    if (!data.name || !data.name.trim()) {
+      throw new Error('Nama mata kuliah wajib diisi.');
+    }
+    const sksVal = Number(data.effective_sks ?? data.sks ?? 0);
+    if (sksVal < 1 || sksVal > 12) {
+      throw new Error('Bobot SKS harus antara 1 sampai 12 SKS.');
+    }
+    const semVal = Number(data.semester ?? 1);
+    if (semVal < 1 || semVal > 14) {
+      throw new Error('Semester harus antara 1 sampai 14.');
+    }
+
+    const isKKN = data.activity_type === 'KKN' || data.name.toUpperCase().includes('KKN');
+    const isSchedulable = isKKN ? false : (data.is_schedulable ?? true);
+    const managedBy = isKKN ? 'LPPM' : (data.managed_by || 'JURUSAN');
+    const scope = isKKN ? 'ALL_KBK' : (data.scope || 'PROG_STUDI');
+
+    const courseType = (data.course_type as CourseType) || 'WAJIB';
+
+    const updatePayload: Record<string, any> = {
+      name: data.name.trim(),
+      code: data.code && data.code.trim() ? data.code.trim().toUpperCase() : null,
+      effective_sks: sksVal,
+      semester: semVal,
+      course_type: courseType,
+      activity_type: isKKN ? 'KKN' : (data.activity_type || 'KULIAH'),
+      is_schedulable: isSchedulable,
+      managed_by: managedBy,
+      scope: scope,
+      kbk_id: data.kbk_id || null,
+      curriculum_id: data.curriculum_id || null,
+      capacity_per_class: data.capacity_per_class || 40,
+      description: data.description?.trim() || null,
+      prerequisites: data.prerequisites?.trim() || null,
+    };
+
+    const { data: updated, error } = await supabase
+      .from('courses')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(parseSupabaseError(error, 'course_code'));
+    }
+
+    return updated;
+  },
+
+  async deleteCourse(id: string): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    const { error } = await supabase.from('courses').delete().eq('id', id);
+    if (error) {
+      // If foreign key constraint prevents deletion, advise or deactivate
+      throw new Error(parseSupabaseError(error));
+    }
+  },
+
+  async toggleSchedulable(id: string, isSchedulable: boolean): Promise<void> {
+    if (!isSupabaseConfigured()) return;
+    const { error } = await supabase
+      .from('courses')
+      .update({ is_schedulable: isSchedulable })
+      .eq('id', id);
+
+    if (error) throw new Error(parseSupabaseError(error));
+  },
+
+  async getCurriculums() {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data } = await supabase
+        .from('curriculums')
+        .select('*')
+        .order('year', { ascending: false });
+      return data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getKBKs() {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data } = await supabase.from('kbk').select('*').order('name', { ascending: true });
+      return data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getStats() {
+    if (!isSupabaseConfigured()) {
+      return { total: 0, schedulable: 0, wajib: 0, pilihan: 0, totalClasses: 0 };
+    }
+
+    try {
+      const { data: courses, error } = await supabase
+        .from('courses')
+        .select('id, course_type, is_schedulable, activity_type');
+
+      if (error) throw error;
+
+      const { count: classesCount } = await supabase
+        .from('course_offerings')
+        .select('*', { count: 'exact', head: true });
+
+      const total = courses?.length || 0;
+      const schedulable = courses?.filter((c) => c.is_schedulable && c.activity_type !== 'KKN').length || 0;
+      const wajib = courses?.filter((c) => c.course_type === 'WAJIB').length || 0;
+      const pilihan = courses?.filter((c) => c.course_type === 'PILIHAN').length || 0;
+
+      return {
+        total,
+        schedulable,
+        wajib,
+        pilihan,
+        totalClasses: classesCount || 0,
+      };
+    } catch (err) {
+      console.error('Failed to get course stats:', err);
+      return { total: 0, schedulable: 0, wajib: 0, pilihan: 0, totalClasses: 0 };
+    }
+  },
+};
