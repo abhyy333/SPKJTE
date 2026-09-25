@@ -164,37 +164,12 @@ export const schedulesService = {
     }
   },
 
-  async getStudentSchedule(studentId: string): Promise<CurrentPublishedSchedule[]> {
-    if (!isSupabaseConfigured() || !studentId) return [];
+  async getStudentSchedule(_studentId?: string): Promise<CurrentPublishedSchedule[]> {
+    if (!isSupabaseConfigured()) return [];
 
     try {
-      // RULE 30 & 50: Use class_assignments ONLY (NO KRS!)
-      const { data: assignments, error } = await supabase
-        .from('class_assignments')
-        .select(`
-          course_offering_id,
-          course_offering:course_offering_id (
-            id,
-            class_name,
-            course_id
-          )
-        `)
-        .eq('student_id', studentId);
-
-      if (error || !assignments || assignments.length === 0) return [];
-
-      const courseIds = assignments
-        .map((a: any) => a.course_offering?.course_id)
-        .filter(Boolean);
-      const classNames = assignments
-        .map((a: any) => a.course_offering?.class_name)
-        .filter(Boolean);
-
-      const allPublished = await this.getPublishedSchedule();
-      return allPublished.filter(
-        (s: any) =>
-          courseIds.includes(s.course_id) && classNames.includes(s.class_name)
-      );
+      // General published schedule viewer for students
+      return await this.getPublishedSchedule();
     } catch (err) {
       console.error('Error getting student schedule:', err);
       return [];

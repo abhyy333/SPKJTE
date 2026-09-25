@@ -142,6 +142,32 @@ export function parseSupabaseError(error: any, context?: string): string {
     return 'Anda tidak memiliki izin untuk melakukan tindakan ini.';
   }
 
+  // Schedule RPC server validation mappings
+  if (msg.includes('ROOM_CAPACITY_EXCEEDED')) {
+    return 'Kapasitas ruangan tidak mencukupi.';
+  }
+  if (msg.includes('ROOM_CONFLICT')) {
+    return 'Ruangan digunakan oleh jadwal lain pada waktu yang sama.';
+  }
+  if (msg.includes('LECTURER_CONFLICT')) {
+    return 'Dosen memiliki jadwal lain pada waktu yang sama.';
+  }
+  if (msg.includes('LECTURER_UNAVAILABLE')) {
+    return 'Dosen tidak tersedia pada waktu tersebut.';
+  }
+  if (msg.includes('INCOMPATIBLE_ROOM_TYPE')) {
+    return 'Tipe ruangan tidak sesuai dengan kebutuhan mata kuliah.';
+  }
+  if (msg.includes('NON_CONSECUTIVE_OR_INACTIVE_SESSIONS')) {
+    return 'Slot waktu tidak tersedia secara berurutan sesuai jumlah SKS.';
+  }
+  if (msg.includes('INVALID_COURSE_OR_EFFECTIVE_SKS')) {
+    return 'Data mata kuliah atau jumlah SKS belum valid.';
+  }
+  if (msg.includes('STALE_REVISION')) {
+    return 'Draft jadwal telah berubah sejak terakhir dimuat. Muat ulang versi terbaru sebelum menyimpan.';
+  }
+
   // 42703 / column not found / schema cache
   if (code === '42703' || msg.includes('Could not find') || msg.includes('schema cache') || msg.includes('column')) {
     return 'Gagal memproses data karena ketidaksesuaian struktur database.';

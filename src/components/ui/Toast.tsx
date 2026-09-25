@@ -18,6 +18,20 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+let globalToast: ToastContextType = {
+  showToast: (msg, type) => console.log(`[Toast ${type || 'info'}]: ${msg}`),
+  success: (msg) => console.log(`[Toast success]: ${msg}`),
+  error: (msg) => console.error(`[Toast error]: ${msg}`),
+  info: (msg) => console.info(`[Toast info]: ${msg}`),
+};
+
+export const toast = {
+  showToast: (msg: string, type?: ToastType) => globalToast.showToast(msg, type),
+  success: (msg: string) => globalToast.success(msg),
+  error: (msg: string) => globalToast.error(msg),
+  info: (msg: string) => globalToast.info(msg),
+};
+
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -36,6 +50,9 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const success = (message: string) => showToast(message, 'success');
   const error = (message: string) => showToast(message, 'error');
   const info = (message: string) => showToast(message, 'info');
+
+  const contextValue = { showToast, success, error, info };
+  globalToast = contextValue;
 
   return (
     <ToastContext.Provider value={{ showToast, success, error, info }}>

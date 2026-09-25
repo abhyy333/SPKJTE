@@ -1,23 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar,
-  Filter,
   Download,
   Search,
-  Building,
-  Users,
-  Clock,
-  RotateCcw,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { StatusBadge } from '../../components/ui/StatusBadge';
 import { schedulesService } from '../../services/schedules.service';
 import { CurrentPublishedSchedule, AcademicTerm } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
+import { ScheduleWorkspace } from '../../components/schedule/ScheduleWorkspace';
 
 export const ScheduleViewerPage: React.FC = () => {
+  const { role } = useAuth();
+
+  // If role is ADMIN, render the Phase 3 manual scheduling workspace
+  if (role === 'ADMIN') {
+    return (
+      <div className="space-y-4">
+        <PageHeader
+          title="Jadwal Perkuliahan"
+          subtitle="Susun dan evaluasi jadwal perkuliahan berdasarkan kelas aktif."
+        />
+        <ScheduleWorkspace />
+      </div>
+    );
+  }
+
+  // Otherwise (DOSEN or MAHASISWA), render the read-only published schedule viewer
+  return <ReadOnlyScheduleViewer />;
+};
+
+const ReadOnlyScheduleViewer: React.FC = () => {
   const [schedules, setSchedules] = useState<CurrentPublishedSchedule[]>([]);
   const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,18 +90,20 @@ export const ScheduleViewerPage: React.FC = () => {
         badge={
           activeTerm ? (
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-              {activeTerm.term} {activeTerm.year}
+              {activeTerm.term || activeTerm.semester_type} {activeTerm.year || activeTerm.academic_year}
             </span>
           ) : undefined
         }
         actions={
-          <button
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-400" />
-            Cetak / Unduh Jadwal
-          </button>
+          schedules.length > 0 ? (
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-slate-400" />
+              Cetak / Unduh Jadwal
+            </button>
+          ) : undefined
         }
       />
 
@@ -133,7 +151,7 @@ export const ScheduleViewerPage: React.FC = () => {
               setClassFilter('all');
               setSearch('');
             }}
-            className="px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg"
+            className="px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer"
           >
             Reset
           </button>
@@ -147,8 +165,8 @@ export const ScheduleViewerPage: React.FC = () => {
       {!loading && !error && filtered.length === 0 && (
         <EmptyState
           icon={<Calendar className="w-8 h-8 text-slate-400" />}
-          title="Belum ada jadwal yang diterbitkan"
-          description="Jadwal perkuliahan resmi akan muncul setelah proses penyusunan diselesaikan oleh administrator."
+          title="Jadwal perkuliahan belum diterbitkan"
+          description="Jadwal perkuliahan resmi akan muncul setelah proses penyusunan dan penerbitan diselesaikan oleh administrator jurusan."
         />
       )}
 

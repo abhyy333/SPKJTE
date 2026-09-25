@@ -65,7 +65,7 @@ export const AdminDashboard: React.FC = () => {
           await Promise.all([
             coursesService.getStats().catch(() => ({ total: 0, schedulable: 0, wajib: 0, pilihan: 0, totalClasses: 0 })),
             lecturersService.getStats().catch(() => ({ total: 0, active: 0, highLoad: 0, available: 0 })),
-            conflictsService.getStats().catch(() => ({ total: 0, lecturerConflicts: 0, roomConflicts: 0, studentConflicts: 0 })),
+            conflictsService.getStats().catch(() => ({ total: 0, lecturerConflicts: 0, roomConflicts: 0, capacityConflicts: 0 })),
             schedulesService.getScheduleStatus().catch(() => ({ status: 'Belum ada jadwal', percentage: 0 })),
             schedulesService.getActiveTerm().catch(() => null),
             schedulesService.getPublishedSchedule().catch(() => []),

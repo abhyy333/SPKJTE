@@ -34,15 +34,9 @@ export const StudentDashboard: React.FC = () => {
       }
 
       try {
-        const std = await studentsService.getStudentByProfileId(profile.id);
-        if (std) {
-          setStudent(std);
-          const sched = await schedulesService.getStudentSchedule(std.id);
-          setMySchedule(sched);
-          setHasAssignments(sched.length > 0 || (std.class_assignments_count || 0) > 0);
-        } else {
-          setHasAssignments(false);
-        }
+        const sched = await schedulesService.getStudentSchedule();
+        setMySchedule(sched);
+        setHasAssignments(true);
       } catch (err) {
         console.error('Error loading student dashboard:', err);
       } finally {

@@ -9,6 +9,7 @@ interface DrawerProps {
   subtitle?: string;
   children: ReactNode;
   width?: string;
+  footer?: ReactNode;
 }
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -18,6 +19,7 @@ export const Drawer: React.FC<DrawerProps> = ({
   subtitle,
   children,
   width = 'max-w-md',
+  footer,
 }) => {
   // Close on Escape
   useEffect(() => {
@@ -78,6 +80,13 @@ export const Drawer: React.FC<DrawerProps> = ({
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-6">{children}</div>
+
+          {/* Footer */}
+          {footer && (
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between shrink-0">
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -69,10 +69,8 @@ export const courseOfferingsService = {
         throw new Error(parseSupabaseError(error));
       }
 
-      let results: CourseOffering[] = (data || []).map((row: any) => ({
-        ...row,
-        class_name: row.class_code || row.class_name,
-        lecturers: (row.course_offering_lecturers || []).map((col: any) => ({
+      let results: CourseOffering[] = (data || []).map((row: any) => {
+        const mappedLecturers = (row.course_offering_lecturers || []).map((col: any) => ({
           ...col,
           lecturer: col.lecturer
             ? {
@@ -80,8 +78,15 @@ export const courseOfferingsService = {
                 code: col.lecturer.lecturer_code || '',
               }
             : null,
-        })),
-      }));
+        }));
+
+        return {
+          ...row,
+          class_name: row.class_code || row.class_name,
+          lecturers: mappedLecturers,
+          course_offering_lecturers: mappedLecturers,
+        };
+      });
 
       // In-memory filters for nested fields
       if (filters?.semester && filters.semester !== 'all') {

@@ -130,6 +130,7 @@ export interface CourseOffering {
   course?: Course | null;
   academic_term?: AcademicTerm | null;
   lecturers?: CourseOfferingLecturer[];
+  course_offering_lecturers?: CourseOfferingLecturer[];
   class_assignments?: ClassAssignment[];
 }
 
@@ -205,17 +206,28 @@ export interface ClassAssignment {
 
 export interface ScheduleVersion {
   id: string;
-  version_number: string;
+  version_number?: string;
   title: string;
-  term_id: string;
+  term_id?: string;
+  academic_term_id?: string;
   version_type?: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'REPLACED';
+  type?: string;
+  status: 'DRAFT' | 'PUBLISHED' | 'REPLACED' | string;
   revision: number;
   created_at: string;
+  updated_at?: string;
   published_at?: string | null;
   created_by?: string | null;
   changelog?: string | null;
   academic_term?: AcademicTerm | null;
+}
+
+export interface ScheduleDraftEntryInput {
+  course_offering_id: string;
+  room_id: string;
+  day_of_week: number;
+  exam_date?: string | null;
+  start_minute: number;
 }
 
 export interface ScheduleEntry {
@@ -223,10 +235,24 @@ export interface ScheduleEntry {
   schedule_version_id: string;
   course_offering_id: string;
   room_id: string;
-  time_slot_id: string;
-  day: string;
-  start_time: string;
-  end_time: string;
+  time_slot_id?: string | null;
+  day_of_week?: number;
+  start_minute?: number;
+  end_minute?: number;
+  exam_date?: string | null;
+  day?: string;
+  start_time?: string;
+  end_time?: string;
+  // Snapshots
+  course_name?: string;
+  course_code?: string;
+  class_code?: string;
+  student_count?: number;
+  room_capacity?: number;
+  lecturer_ids?: string[];
+  lecturer_names?: string[] | string;
+  session_count?: number;
+  // Relations
   course_offering?: CourseOffering | null;
   room?: Room | null;
   time_slot?: TimeSlot | null;
