@@ -49,11 +49,15 @@ export const lecturersService = {
         ...row,
         code: codeVal,
         lecturer_code: codeVal,
-        status: row.status || (row.profile_id ? 'Aktif' : 'Terdaftar'),
+        status: row.status === 'Nonaktif' ? 'Nonaktif' : 'Aktif',
         offerings_count: offerings.length,
         total_sks: totalSks,
       };
     });
+
+    if (filters?.status && filters.status !== 'all') {
+      results = results.filter((l) => l.status === filters.status);
+    }
 
     if (filters?.search) {
       const s = filters.search.toLowerCase().trim();
@@ -221,14 +225,75 @@ export const lecturersService = {
     return updated;
   },
 
+  /**
+   * Update status dosen (Aktif / Nonaktif)
+   */
+  async updateLecturerStatus(id: string, status: 'Aktif' | 'Nonaktif'): Promise<Lecturer> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    const { data, error } = await supabase
+      .from('lecturers')
+      .update({ status })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating lecturer status:', error);
+      throw new Error(parseSupabaseError(error));
+    }
+
+    return data;
+  },
+
+  /**
+   * Cek dependensi akademik dosen (course_offering_lecturers, lecturer_availability)
+   */
+  async checkLecturerDependencies(id: string): Promise<{ inUse: boolean; offeringCount: number; availabilityCount: number }> {
+    if (!isSupabaseConfigured()) {
+      return { inUse: false, offeringCount: 0, availabilityCount: 0 };
+    }
+
+    try {
+      const [offeringRes, availRes] = await Promise.all([
+        supabase
+          .from('course_offering_lecturers')
+          .select('course_offering_id', { count: 'exact', head: true })
+          .eq('lecturer_id', id),
+        supabase
+          .from('lecturer_availability')
+          .select('id', { count: 'exact', head: true })
+          .eq('lecturer_id', id),
+      ]);
+
+      const offeringCount = offeringRes.count || 0;
+      const availabilityCount = availRes.count || 0;
+      const inUse = offeringCount > 0 || availabilityCount > 0;
+
+      return { inUse, offeringCount, availabilityCount };
+    } catch (e) {
+      console.error('Error checking lecturer dependencies:', e);
+      return { inUse: false, offeringCount: 0, availabilityCount: 0 };
+    }
+  },
+
   async deleteLecturer(id: string): Promise<void> {
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
 
+    // 8. HARD DELETE DOSEN: check dependency first
+    const { inUse } = await this.checkLecturerDependencies(id);
+    if (inUse) {
+      throw new Error('Dosen tidak dapat dihapus karena sudah digunakan pada data akademik. Anda dapat menonaktifkan dosen ini.');
+    }
+
     const { error } = await supabase.from('lecturers').delete().eq('id', id);
     if (error) {
-      throw new Error(parseSupabaseError(error));
+      console.error('Technical error delete lecturer:', error);
+      throw new Error(parseSupabaseError(error, 'lecturer_delete'));
     }
   },
 

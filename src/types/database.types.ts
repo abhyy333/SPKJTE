@@ -103,8 +103,8 @@ export interface Course {
   is_schedulable: boolean;
   managed_by?: string | null;
   scope?: string | null;
+  legacy_id?: string | null;
   metadata?: Record<string, any> | null;
-  capacity_per_class?: number;
   description?: string | null;
   prerequisites?: string | null;
   kbk?: KBK | null;

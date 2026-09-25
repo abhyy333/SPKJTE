@@ -109,8 +109,11 @@ export function parseSupabaseError(error: any, context?: string): string {
   if (!error) return 'Terjadi kesalahan sistem yang tidak diketahui.';
   if (typeof error === 'string') return error;
 
-  const msg = error.message || error.details || '';
-  const code = error.code || '';
+  // Log technical error details to console
+  console.error('Technical database error:', error);
+
+  const msg = String(error.message || error.details || '');
+  const code = String(error.code || '');
 
   // 23505 = unique_violation
   if (code === '23505' || msg.includes('duplicate key') || msg.includes('already exists')) {
@@ -137,6 +140,23 @@ export function parseSupabaseError(error: any, context?: string): string {
   // 42501 = insufficient_privilege / RLS policy violation
   if (code === '42501' || msg.includes('permission denied') || msg.includes('violates row-level security')) {
     return 'Anda tidak memiliki izin untuk melakukan tindakan ini.';
+  }
+
+  // 42703 / column not found / schema cache
+  if (code === '42703' || msg.includes('Could not find') || msg.includes('schema cache') || msg.includes('column')) {
+    return 'Gagal memproses data karena ketidaksesuaian struktur database.';
+  }
+
+  if (context === 'course_save') {
+    return 'Gagal menyimpan perubahan mata kuliah.';
+  }
+  if (context === 'lecturer_delete') {
+    return 'Dosen tidak dapat dihapus karena masih digunakan pada data akademik.';
+  }
+
+  // Technical error string sanitize
+  if (msg.includes('PostgREST') || msg.includes('relation') || msg.includes('syntax') || msg.includes('table')) {
+    return 'Terjadi kendala saat memproses data pada database.';
   }
 
   return msg || 'Gagal memproses data pada database.';

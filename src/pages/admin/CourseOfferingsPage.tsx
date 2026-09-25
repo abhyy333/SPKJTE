@@ -169,7 +169,8 @@ export const CourseOfferingsPage: React.FC = () => {
     setFormRequiredRoomType(roomTypes[0] || 'Ruang Kuliah Teori');
     setFormIncludeUts(true);
     setFormIncludeUas(true);
-    setFormLecturers(lecturers.length > 0 ? [{ lecturer_id: lecturers[0].id, assignment_role: 'KOORDINATOR' }] : []);
+    const activeLecturers = lecturers.filter((l) => l.status !== 'Nonaktif');
+    setFormLecturers(activeLecturers.length > 0 ? [{ lecturer_id: activeLecturers[0].id, assignment_role: 'KOORDINATOR' }] : []);
     setModalOpen(true);
   };
 
@@ -195,8 +196,12 @@ export const CourseOfferingsPage: React.FC = () => {
 
   // Add/Remove lecturer row in form
   const handleAddLecturerToForm = () => {
-    if (lecturers.length === 0) return;
-    setFormLecturers([...formLecturers, { lecturer_id: lecturers[0].id, assignment_role: 'PENGAMPU' }]);
+    const activeLecturers = lecturers.filter((l) => l.status !== 'Nonaktif');
+    if (activeLecturers.length === 0) {
+      toast.error('Tidak ada dosen aktif yang tersedia.');
+      return;
+    }
+    setFormLecturers([...formLecturers, { lecturer_id: activeLecturers[0].id, assignment_role: 'PENGAMPU' }]);
   };
 
   const handleRemoveLecturerFromForm = (idx: number) => {
@@ -905,11 +910,13 @@ export const CourseOfferingsPage: React.FC = () => {
                           onChange={(e) => handleUpdateLecturerInForm(idx, 'lecturer_id', e.target.value)}
                           className="flex-1 px-2.5 py-1.5 text-2xs border border-slate-300 rounded-lg bg-white"
                         >
-                          {lecturers.map((l) => (
-                            <option key={l.id} value={l.id}>
-                              {l.name} {l.lecturer_code ? `(${l.lecturer_code})` : ''}
-                            </option>
-                          ))}
+                          {lecturers
+                            .filter((l) => l.status !== 'Nonaktif' || l.id === fl.lecturer_id)
+                            .map((l) => (
+                              <option key={l.id} value={l.id}>
+                                {l.name} {l.lecturer_code ? `(${l.lecturer_code})` : ''} {l.status === 'Nonaktif' ? '[Nonaktif]' : ''}
+                              </option>
+                            ))}
                         </select>
 
                         <select

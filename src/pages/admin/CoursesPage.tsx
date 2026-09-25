@@ -85,7 +85,6 @@ export const CoursesPage: React.FC = () => {
   const [formKbkId, setFormKbkId] = useState('');
   const [formCurriculumId, setFormCurriculumId] = useState('');
   const [formIsSchedulable, setFormIsSchedulable] = useState(true);
-  const [formCapacity, setFormCapacity] = useState<number>(40);
   const [formDescription, setFormDescription] = useState('');
 
   // Delete Dialog
@@ -160,7 +159,6 @@ export const CoursesPage: React.FC = () => {
     setFormKbkId(kbks[0]?.id || '');
     setFormCurriculumId(curriculums[0]?.id || '');
     setFormIsSchedulable(true);
-    setFormCapacity(40);
     setFormDescription('');
     setModalOpen(true);
   };
@@ -178,7 +176,6 @@ export const CoursesPage: React.FC = () => {
     setFormKbkId(c.kbk_id || '');
     setFormCurriculumId(c.curriculum_id || '');
     setFormIsSchedulable(c.is_schedulable);
-    setFormCapacity(c.capacity_per_class || 40);
     setFormDescription(c.description || '');
     setModalOpen(true);
   };
@@ -199,7 +196,6 @@ export const CoursesPage: React.FC = () => {
           kbk_id: formKbkId || null,
           curriculum_id: formCurriculumId || null,
           is_schedulable: formActivityType === 'KKN' ? false : formIsSchedulable,
-          capacity_per_class: formCapacity,
           description: formDescription,
         });
         toast.success('Perubahan mata kuliah berhasil disimpan.');
@@ -214,7 +210,6 @@ export const CoursesPage: React.FC = () => {
           kbk_id: formKbkId || null,
           curriculum_id: formCurriculumId || null,
           is_schedulable: formActivityType === 'KKN' ? false : formIsSchedulable,
-          capacity_per_class: formCapacity,
           description: formDescription,
         });
         toast.success('Mata kuliah baru berhasil ditambahkan.');

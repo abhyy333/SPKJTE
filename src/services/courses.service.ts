@@ -47,13 +47,24 @@ export const coursesService = {
       query = query.eq('curriculum_id', filters.curriculumId);
     }
 
-    const { data, error } = await query;
+    const { data: rawData, error } = await query;
     if (error) {
       console.error('Error fetching courses:', error);
       throw new Error(parseSupabaseError(error));
     }
 
-    let results: Course[] = (data || []).map((row: any) => ({
+    // 12. COURSE MASTER FILTER: metadata->>'master_catalog' = 'true'
+    let data = rawData || [];
+    const hasMasterCatalogFlag = data.some(
+      (r: any) => r.metadata?.master_catalog === 'true' || r.metadata?.master_catalog === true
+    );
+    if (hasMasterCatalogFlag) {
+      data = data.filter(
+        (r: any) => r.metadata?.master_catalog === 'true' || r.metadata?.master_catalog === true
+      );
+    }
+
+    let results: Course[] = data.map((row: any) => ({
       ...row,
       effective_sks: row.effective_sks ?? row.sks ?? 0,
       sks: row.effective_sks ?? row.sks ?? 0,
@@ -78,6 +89,19 @@ export const coursesService = {
         results = results.filter((c) => !c.is_schedulable || c.activity_type === 'KKN');
       }
     }
+
+    // Sort: semester ASC, lalu kurikulum (2022, 2026), lalu code ASC
+    results.sort((a, b) => {
+      if ((a.semester || 0) !== (b.semester || 0)) {
+        return (a.semester || 0) - (b.semester || 0);
+      }
+      const yearA = a.curriculum?.year || 0;
+      const yearB = b.curriculum?.year || 0;
+      if (yearA !== yearB) {
+        return yearA - yearB;
+      }
+      return (a.code || '').localeCompare(b.code || '');
+    });
 
     return results;
   },
@@ -178,10 +202,9 @@ export const coursesService = {
       scope: scope,
       kbk_id: data.kbk_id || null,
       curriculum_id: data.curriculum_id || null,
-      capacity_per_class: data.capacity_per_class || 40,
-      description: data.description?.trim() || null,
-      prerequisites: data.prerequisites?.trim() || null,
     };
+    if (data.metadata) insertPayload.metadata = data.metadata;
+    if (data.legacy_id) insertPayload.legacy_id = data.legacy_id;
 
     const { data: created, error } = await supabase
       .from('courses')
@@ -232,10 +255,9 @@ export const coursesService = {
       scope: scope,
       kbk_id: data.kbk_id || null,
       curriculum_id: data.curriculum_id || null,
-      capacity_per_class: data.capacity_per_class || 40,
-      description: data.description?.trim() || null,
-      prerequisites: data.prerequisites?.trim() || null,
     };
+    if (data.metadata) updatePayload.metadata = data.metadata;
+    if (data.legacy_id) updatePayload.legacy_id = data.legacy_id;
 
     const { data: updated, error } = await supabase
       .from('courses')

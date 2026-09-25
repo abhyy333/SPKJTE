@@ -132,7 +132,6 @@ export const courseOfferingsService = {
           course_type,
           activity_type,
           kbk_id,
-          capacity_per_class,
           kbk:kbk_id ( id, name, code )
         ),
         course_offering_lecturers (
