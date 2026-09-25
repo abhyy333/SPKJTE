@@ -504,7 +504,7 @@ export const ScheduleWorkspace: React.FC = () => {
 
       {/* Main Workspace Layout (Left: Unscheduled, Right: Weekly Grid) */}
       {selectedVersion && (
-        <div className="flex flex-col lg:flex-row gap-4 items-start">
+        <div className="flex flex-col lg:flex-row gap-4 items-start w-full min-w-0">
           {/* Left Panel: Kelas Belum Terjadwal */}
           <UnscheduledOfferingPanel
             offerings={unscheduledOfferings}

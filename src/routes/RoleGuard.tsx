@@ -8,39 +8,46 @@ import { LoadingState } from '../components/ui/LoadingState';
 interface RoleGuardProps {
   children: React.ReactElement;
   allowedRoles: UserRole[];
+  allowGuest?: boolean;
 }
 
-export const RoleGuard: React.FC<RoleGuardProps> = ({ children, allowedRoles }) => {
-  const { actualRole, effectiveRole, profile, loading, user } = useAuth();
+export const RoleGuard: React.FC<RoleGuardProps> = ({
+  children,
+  allowedRoles,
+  allowGuest = false,
+}) => {
+  const { actualRole, effectiveRole, isOwnerAdmin, accessMode, loading, user } = useAuth();
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <LoadingState type="spinner" message="Memvalidasi hak akses role..." />
+        <LoadingState type="spinner" message="Memvalidasi hak akses..." />
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  // 1. If route explicitly permits guest access in read-only mode
+  if (allowGuest && accessMode === 'GUEST') {
+    return children;
   }
 
-  // 1. Authoritative check: If actual database role is in allowedRoles, always allow!
-  // This ensures ADMIN can always open admin routes even when previewing another role.
-  const isActualAllowed = actualRole ? allowedRoles.includes(actualRole) : false;
+  // 2. Owner admin has full access to ADMIN routes
+  if (isOwnerAdmin && allowedRoles.includes('ADMIN')) {
+    return children;
+  }
 
-  // 2. Preview check: If user has preview permission for the current effectiveRole or target allowedRoles
-  const isPreviewAllowed = Boolean(
-    effectiveRole &&
-      allowedRoles.includes(effectiveRole) &&
-      (actualRole === 'ADMIN' || profile?.preview_roles?.some((pr) => allowedRoles.includes(pr)))
-  );
+  // 3. Authenticated user with matching role or role preview
+  if (user) {
+    const isActualAllowed = actualRole ? allowedRoles.includes(actualRole) : false;
+    const isEffectiveAllowed = effectiveRole ? allowedRoles.includes(effectiveRole) : false;
 
-  const canAccess = isActualAllowed || isPreviewAllowed;
+    if (isActualAllowed || isEffectiveAllowed) {
+      return children;
+    }
 
-  if (!canAccess) {
     return <ForbiddenPage />;
   }
 
-  return children;
+  // 4. Guest trying to access restricted admin route -> redirect to public dashboard
+  return <Navigate to="/dashboard" replace />;
 };

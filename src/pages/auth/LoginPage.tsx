@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogIn, Lock, Mail, AlertCircle, Database, Loader2, ArrowRight } from 'lucide-react';
+import { LogIn, Lock, Mail, AlertCircle, Database, Loader2, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UnramLogo } from '../../components/shared/UnramLogo';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { SupabaseConfigModal } from '../../components/ui/SupabaseConfigModal';
+import { toast } from '../../components/ui/Toast';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -13,18 +14,16 @@ export const LoginPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
-  const { signIn, user, role } = useAuth();
+  const { signIn, user, role, isOwnerAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Redirect if already logged in
+  // Redirect if already logged in as owner admin
   React.useEffect(() => {
-    if (user && role) {
-      if (role === 'DOSEN') navigate('/dosen/dashboard', { replace: true });
-      else if (role === 'MAHASISWA') navigate('/mahasiswa/dashboard', { replace: true });
-      else navigate('/dashboard', { replace: true });
+    if (user && isOwnerAdmin) {
+      navigate('/dashboard', { replace: true });
     }
-  }, [user, role, navigate]);
+  }, [user, isOwnerAdmin, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,17 +51,11 @@ export const LoginPage: React.FC = () => {
         return;
       }
 
-      // Redirect by role
-      const userRole = res.role;
-      const origin = (location.state as any)?.from?.pathname;
-
-      if (origin && origin !== '/login') {
-        navigate(origin, { replace: true });
-      } else if (userRole === 'DOSEN') {
-        navigate('/dosen/dashboard', { replace: true });
-      } else if (userRole === 'MAHASISWA') {
-        navigate('/mahasiswa/dashboard', { replace: true });
+      if (res.isOwner) {
+        toast.success('Berhasil masuk sebagai Administrator Pemilik.');
+        navigate('/dashboard', { replace: true });
       } else {
+        toast.info('Anda masuk dalam mode baca saja.');
         navigate('/dashboard', { replace: true });
       }
     } catch (err: any) {
@@ -186,9 +179,17 @@ export const LoginPage: React.FC = () => {
           </form>
 
           {/* Footer note: strictly NO register/sign up button as per rule 7 */}
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <p className="text-2xs text-slate-400 leading-relaxed">
-              Akun pengguna dikelola dan didaftarkan oleh Administrator Jurusan Teknik Elektro.
+          <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer py-1.5 px-3 rounded-lg hover:bg-slate-50"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Kembali ke Dashboard (Mode Tamu)
+            </button>
+            <p className="text-2xs text-slate-400 text-center leading-relaxed">
+              Akun pengelola jadwal dikonfigurasi oleh Administrator Jurusan Teknik Elektro.
             </p>
           </div>
         </div>

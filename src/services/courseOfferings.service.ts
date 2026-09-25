@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { CourseOffering, CourseOfferingLecturer } from '../types';
 import { parseSupabaseError } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export interface LecturerAssignmentInput {
   lecturer_id: string;
@@ -23,6 +24,93 @@ export const courseOfferingsService = {
     }
 
     try {
+      const isOwner = await verifyOwnerAdmin();
+
+      if (!isOwner) {
+        // GUEST READ ONLY: Use guest_course_offerings, guest_course_offering_lecturers, guest_courses, guest_lecturers
+        let guestQuery = supabase
+          .from('guest_course_offerings')
+          .select('*')
+          .order('class_code', { ascending: true });
+
+        if (filters?.termId && filters.termId !== 'all') {
+          guestQuery = guestQuery.eq('academic_term_id', filters.termId);
+        }
+        if (filters?.courseId && filters.courseId !== 'all') {
+          guestQuery = guestQuery.eq('course_id', filters.courseId);
+        }
+        if (filters?.classCode && filters.classCode !== 'all') {
+          guestQuery = guestQuery.eq('class_code', filters.classCode);
+        }
+        if (filters?.confirmedStatus === 'confirmed') {
+          guestQuery = guestQuery.eq('assignment_confirmed', true);
+        } else if (filters?.confirmedStatus === 'unconfirmed') {
+          guestQuery = guestQuery.eq('assignment_confirmed', false);
+        }
+
+        const [offeringsRes, colRes, coursesRes, lectRes] = await Promise.all([
+          guestQuery,
+          supabase.from('guest_course_offering_lecturers').select('*'),
+          supabase.from('guest_courses').select('id, name, code, effective_sks, semester, course_type, activity_type, kbk_id'),
+          supabase.from('guest_lecturers').select('id, name, lecturer_code'),
+        ]);
+
+        if (offeringsRes.error) {
+          console.error('Error fetching guest offerings:', offeringsRes.error);
+          throw new Error(parseSupabaseError(offeringsRes.error));
+        }
+
+        const courseMap = new Map((coursesRes.data || []).map((c: any) => [c.id, c]));
+        const lectMap = new Map((lectRes.data || []).map((l: any) => [l.id, l]));
+
+        // Group lecturers by offering id
+        const colByOffering = new Map<string, any[]>();
+        (colRes.data || []).forEach((col: any) => {
+          const arr = colByOffering.get(col.course_offering_id) || [];
+          arr.push({
+            ...col,
+            lecturer: lectMap.get(col.lecturer_id) || null,
+          });
+          colByOffering.set(col.course_offering_id, arr);
+        });
+
+        let results: CourseOffering[] = (offeringsRes.data || []).map((row: any) => {
+          const mappedLecturers = colByOffering.get(row.id) || [];
+          return {
+            ...row,
+            class_name: row.class_code || row.class_name,
+            course: courseMap.get(row.course_id) || null,
+            lecturers: mappedLecturers,
+            course_offering_lecturers: mappedLecturers,
+          };
+        });
+
+        if (filters?.semester && filters.semester !== 'all') {
+          results = results.filter((o) => o.course?.semester === Number(filters.semester));
+        }
+        if (filters?.kbkId && filters.kbkId !== 'all') {
+          results = results.filter((o) => o.course?.kbk_id === filters.kbkId);
+        }
+        if (filters?.lecturerId && filters.lecturerId !== 'all') {
+          results = results.filter((o) =>
+            o.lecturers?.some((l) => l.lecturer_id === filters.lecturerId)
+          );
+        }
+        if (filters?.search) {
+          const s = filters.search.toLowerCase().trim();
+          results = results.filter((o) => {
+            const cName = o.course?.name?.toLowerCase() || '';
+            const cCode = o.course?.code?.toLowerCase() || '';
+            const cls = o.class_code?.toLowerCase() || '';
+            const lNames = o.lecturers?.map((l) => l.lecturer?.name?.toLowerCase() || '').join(' ') || '';
+            return cName.includes(s) || cCode.includes(s) || cls.includes(s) || lNames.includes(s);
+          });
+        }
+
+        return results;
+      }
+
+      // OWNER ADMIN: Query full course_offerings table
       let query = supabase
         .from('course_offerings')
         .select(`

@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { ScheduleVersion, ScheduleDraftEntryInput } from '../types';
 import { parseSupabaseError } from '../lib/utils';
+import { assertOwnerAdmin } from '../lib/authGuard';
 
 export const scheduleVersionsService = {
   /**
@@ -76,6 +77,7 @@ export const scheduleVersionsService = {
     title?: string,
     copyFromId?: string | null
   ): Promise<ScheduleVersion> {
+    await assertOwnerAdmin('membuat draft jadwal');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -121,6 +123,7 @@ export const scheduleVersionsService = {
     entries: ScheduleDraftEntryInput[],
     reason: string = 'Penyesuaian jadwal manual'
   ): Promise<{ revision: number; version?: ScheduleVersion }> {
+    await assertOwnerAdmin('menyimpan perubahan jadwal');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }

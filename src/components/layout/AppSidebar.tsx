@@ -54,7 +54,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const isMasterDataRoute = [
     '/data-mata-kuliah',
     '/data-dosen',
-    '/data-mahasiswa',
     '/ruangan',
     '/slot-waktu',
     '/penawaran-kelas',
@@ -250,7 +249,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       [
                         { label: 'Mata Kuliah', path: '/data-mata-kuliah', icon: <BookOpen className="w-5 h-5" /> },
                         { label: 'Dosen', path: '/data-dosen', icon: <Users className="w-5 h-5" /> },
-                        { label: 'Mahasiswa', path: '/data-mahasiswa', icon: <GraduationCap className="w-5 h-5" /> },
                         { label: 'Ruangan', path: '/ruangan', icon: <DoorClosed className="w-5 h-5" /> },
                         { label: 'Slot Waktu', path: '/slot-waktu', icon: <Clock className="w-5 h-5" /> },
                         { label: 'Penawaran Kelas', path: '/penawaran-kelas', icon: <Layers className="w-5 h-5" /> },

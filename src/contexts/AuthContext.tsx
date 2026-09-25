@@ -3,6 +3,9 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Profile, UserRole } from '../types';
 
+export const OWNER_EMAIL = 'abhyy333@gmail.com';
+export type AccessMode = 'GUEST' | 'OWNER_ADMIN';
+
 const STORAGE_PREVIEW_ROLE_KEY = 'spk_preview_role';
 
 export interface AuthContextType {
@@ -12,11 +15,13 @@ export interface AuthContextType {
   actualRole: UserRole | null;
   previewRole: UserRole | null;
   effectiveRole: UserRole | null;
+  isOwnerAdmin: boolean;
+  accessMode: AccessMode;
   availablePreviewRoles: UserRole[];
   setPreviewRole: (role: UserRole | null) => void;
   exitPreview: () => void;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error?: string; role?: UserRole }>;
+  signIn: (email: string, password: string) => Promise<{ error?: string; role?: UserRole; isOwner?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -39,19 +44,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Authoritative database role
   const actualRole: UserRole | null = profile?.role ?? null;
 
-  // Available roles for preview
+  // STRICT SECURITY RULE: Owner Admin check
+  const isOwnerAdmin =
+    !!user &&
+    user.email?.toLowerCase() === OWNER_EMAIL &&
+    profile?.role === 'ADMIN';
+
+  const accessMode: AccessMode = isOwnerAdmin ? 'OWNER_ADMIN' : 'GUEST';
+
+  // Role preview is strictly allowed ONLY for the verified owner admin
   const availablePreviewRoles: UserRole[] = React.useMemo(() => {
+    if (!isOwnerAdmin) return [];
     if (!profile?.preview_roles || !Array.isArray(profile.preview_roles)) {
-      return [];
+      return ['ADMIN', 'DOSEN', 'MAHASISWA'];
     }
     return profile.preview_roles;
-  }, [profile?.preview_roles]);
+  }, [isOwnerAdmin, profile?.preview_roles]);
 
-  // Effective role used strictly for UI and presentation
-  const effectiveRole: UserRole | null = previewRole ?? actualRole;
+  // Effective role used strictly for UI presentation (preview only valid for owner admin)
+  const effectiveRole: UserRole | null = isOwnerAdmin
+    ? (previewRole ?? actualRole)
+    : actualRole;
 
   // Set or switch preview role
   const setPreviewRole = (role: UserRole | null) => {
+    if (!isOwnerAdmin) {
+      setPreviewRoleState(null);
+      return;
+    }
+
     if (!role || role === actualRole) {
       setPreviewRoleState(null);
       try {
@@ -62,7 +83,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
-    // Only allow if role is in profile.preview_roles
     if (availablePreviewRoles.includes(role)) {
       setPreviewRoleState(role);
       try {
@@ -105,20 +125,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setProfile(fetchedProfile);
 
         // Verify stored previewRole validity against profile.preview_roles
-        const allowed = Array.isArray(fetchedProfile.preview_roles)
-          ? fetchedProfile.preview_roles
-          : [];
+        const isOwner =
+          currentUser.email?.toLowerCase() === OWNER_EMAIL &&
+          fetchedProfile.role === 'ADMIN';
 
-        try {
-          const saved = localStorage.getItem(STORAGE_PREVIEW_ROLE_KEY) as UserRole | null;
-          if (saved && allowed.includes(saved) && saved !== fetchedProfile.role) {
-            setPreviewRoleState(saved);
-          } else {
-            setPreviewRoleState(null);
-            localStorage.removeItem(STORAGE_PREVIEW_ROLE_KEY);
+        if (isOwner) {
+          const allowed = Array.isArray(fetchedProfile.preview_roles)
+            ? fetchedProfile.preview_roles
+            : ['ADMIN', 'DOSEN', 'MAHASISWA'];
+
+          try {
+            const saved = localStorage.getItem(STORAGE_PREVIEW_ROLE_KEY) as UserRole | null;
+            if (saved && allowed.includes(saved) && saved !== fetchedProfile.role) {
+              setPreviewRoleState(saved);
+            } else {
+              setPreviewRoleState(null);
+              localStorage.removeItem(STORAGE_PREVIEW_ROLE_KEY);
+            }
+          } catch {
+            // ignore localStorage error
           }
-        } catch {
-          // ignore localStorage error
+        } else {
+          setPreviewRoleState(null);
+          try {
+            localStorage.removeItem(STORAGE_PREVIEW_ROLE_KEY);
+          } catch {
+            // ignore
+          }
         }
 
         return fetchedProfile;
@@ -187,17 +220,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const signIn = async (email: string, password: string): Promise<{ error?: string; role?: UserRole }> => {
+  const signIn = async (
+    email: string,
+    password: string
+  ): Promise<{ error?: string; role?: UserRole; isOwner?: boolean }> => {
     if (!isSupabaseConfigured()) {
       return {
-        error: 'Koneksi database belum dikonfigurasi. Tambahkan Supabase URL dan Publishable Key pada environment project.',
+        error: 'Koneksi database belum dikonfigurasi. Tambahkan Supabase URL dan Publishable Key.',
       };
     }
 
     try {
       setLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: cleanEmail,
         password,
       });
 
@@ -214,15 +251,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(data.user);
       const prof = await fetchProfile(data.user);
 
-      if (!prof) {
-        setLoading(false);
-        return {
-          error: 'Akun berhasil login tetapi belum terhubung dengan profil sistem. Hubungi administrator.',
-        };
-      }
+      const isOwner = cleanEmail === OWNER_EMAIL && prof?.role === 'ADMIN';
 
       setLoading(false);
-      return { role: prof.role };
+      return { role: prof?.role, isOwner };
     } catch (err: any) {
       setLoading(false);
       return { error: err.message || 'Terjadi kesalahan sistem saat proses login.' };
@@ -257,6 +289,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         actualRole,
         previewRole,
         effectiveRole,
+        isOwnerAdmin,
+        accessMode,
         availablePreviewRoles,
         setPreviewRole,
         exitPreview,

@@ -26,9 +26,11 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../components/ui/Toast';
 import { coursesService } from '../../services/courses.service';
 import { Course, CourseOffering, KBK, Curriculum, CourseType } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 
 export const CoursesPage: React.FC = () => {
   const toast = useToast();
+  const { isOwnerAdmin } = useAuth();
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [kbks, setKbks] = useState<KBK[]>([]);
@@ -273,15 +275,17 @@ export const CoursesPage: React.FC = () => {
         title="Data Mata Kuliah"
         subtitle="Kelola kurikulum, beban SKS, jenis, dan status penjadwalan mata kuliah Teknik Elektro"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleOpenCreateModal}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Tambah Mata Kuliah
-            </button>
-          </div>
+          isOwnerAdmin ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleOpenCreateModal}
+                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Tambah Mata Kuliah
+              </button>
+            </div>
+          ) : undefined
         }
       />
 
@@ -462,7 +466,7 @@ export const CoursesPage: React.FC = () => {
                   <th className="py-3 px-4">KBK</th>
                   <th className="py-3 px-4">Kurikulum</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-center">Aksi</th>
+                  {isOwnerAdmin && <th className="py-3 px-4 text-center">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -526,24 +530,26 @@ export const CoursesPage: React.FC = () => {
                           />
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={(e) => handleOpenEditModal(c, e)}
-                            title="Edit Mata Kuliah"
-                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-slate-50"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => handleDeleteClick(c, e)}
-                            title="Hapus Mata Kuliah"
-                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
+                      {isOwnerAdmin && (
+                        <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={(e) => handleOpenEditModal(c, e)}
+                              title="Edit Mata Kuliah"
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:bg-slate-50 cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteClick(c, e)}
+                              title="Hapus Mata Kuliah"
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

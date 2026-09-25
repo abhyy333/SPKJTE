@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { TimeSlot } from '../types';
 import { minuteToTime, timeToMinute, dayOfWeekToName, parseSupabaseError } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export const timeSlotsService = {
   async getTimeSlots(filters?: { termId?: string; day?: number; activeOnly?: boolean }): Promise<TimeSlot[]> {
@@ -9,8 +10,11 @@ export const timeSlotsService = {
     }
 
     try {
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'time_slots' : 'guest_time_slots';
+
       let query = supabase
-        .from('time_slots')
+        .from(table)
         .select('*')
         .order('day_of_week', { ascending: true })
         .order('start_minute', { ascending: true });
@@ -60,6 +64,7 @@ export const timeSlotsService = {
     is_active?: boolean;
     academic_term_id?: string | null;
   }): Promise<TimeSlot> {
+    await assertOwnerAdmin('menambah slot waktu');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -103,6 +108,7 @@ export const timeSlotsService = {
       is_active?: boolean;
     }
   ): Promise<TimeSlot> {
+    await assertOwnerAdmin('memperbarui slot waktu');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -137,6 +143,7 @@ export const timeSlotsService = {
   },
 
   async deleteTimeSlot(id: string): Promise<void> {
+    await assertOwnerAdmin('menghapus slot waktu');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -148,6 +155,7 @@ export const timeSlotsService = {
   },
 
   async toggleTimeSlotActive(id: string, isActive: boolean): Promise<void> {
+    await assertOwnerAdmin('mengubah status slot waktu');
     if (!isSupabaseConfigured()) return;
     const { error } = await supabase
       .from('time_slots')

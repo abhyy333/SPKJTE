@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Lecturer, LecturerAvailability, LecturerCourseAssignment } from '../types';
 import { parseSupabaseError, normalizeNameForComparison } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export const lecturersService = {
   async getLecturers(filters?: { search?: string; kbkId?: string; status?: string }): Promise<Lecturer[]> {
@@ -8,6 +9,57 @@ export const lecturersService = {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
 
+    const isOwner = await verifyOwnerAdmin();
+
+    if (!isOwner) {
+      // GUEST READ ONLY: Use guest_lecturers view with safe fields only!
+      // NO email, phone, NIP, profile_id, private records exposed
+      const [lectRes, kbkRes] = await Promise.all([
+        supabase.from('guest_lecturers').select('*').order('name', { ascending: true }),
+        supabase.from('guest_kbk').select('id, name, code'),
+      ]);
+
+      if (lectRes.error) {
+        console.error('Error fetching guest lecturers:', lectRes.error);
+        throw new Error(parseSupabaseError(lectRes.error));
+      }
+
+      const kbkMap = new Map((kbkRes.data || []).map((k: any) => [k.id, k]));
+
+      let results: Lecturer[] = (lectRes.data || []).map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        code: row.lecturer_code || '',
+        lecturer_code: row.lecturer_code || '',
+        kbk_id: row.kbk_id,
+        kbk: kbkMap.get(row.kbk_id) || null,
+        expertise: row.expertise,
+        status: row.status === 'Nonaktif' ? 'Nonaktif' : 'Aktif',
+        offerings_count: 0,
+        total_sks: 0,
+      }));
+
+      if (filters?.kbkId && filters.kbkId !== 'all') {
+        results = results.filter((l) => l.kbk_id === filters.kbkId);
+      }
+
+      if (filters?.status && filters.status !== 'all') {
+        results = results.filter((l) => l.status === filters.status);
+      }
+
+      if (filters?.search) {
+        const s = filters.search.toLowerCase().trim();
+        results = results.filter(
+          (l) =>
+            (l.name && l.name.toLowerCase().includes(s)) ||
+            (l.lecturer_code && l.lecturer_code.toLowerCase().includes(s))
+        );
+      }
+
+      return results;
+    }
+
+    // OWNER ADMIN: Query full lecturers table
     let query = supabase
       .from('lecturers')
       .select(`
@@ -153,6 +205,7 @@ export const lecturersService = {
     email?: string;
     phone?: string;
   }): Promise<Lecturer> {
+    await assertOwnerAdmin('menambah dosen');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -194,6 +247,7 @@ export const lecturersService = {
       phone?: string;
     }
   ): Promise<Lecturer> {
+    await assertOwnerAdmin('mengubah data dosen');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -229,6 +283,7 @@ export const lecturersService = {
    * Update status dosen (Aktif / Nonaktif)
    */
   async updateLecturerStatus(id: string, status: 'Aktif' | 'Nonaktif'): Promise<Lecturer> {
+    await assertOwnerAdmin('mengubah status aktif dosen');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -280,6 +335,7 @@ export const lecturersService = {
   },
 
   async deleteLecturer(id: string): Promise<void> {
+    await assertOwnerAdmin('menghapus dosen');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }

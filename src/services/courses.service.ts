@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Course, CourseOffering, CourseType } from '../types';
 import { parseSupabaseError } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export const coursesService = {
   async getCourses(filters?: {
@@ -16,6 +17,82 @@ export const coursesService = {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
 
+    const isOwner = await verifyOwnerAdmin();
+
+    if (!isOwner) {
+      // GUEST READ ONLY: Use guest_courses view with guest_kbk and guest_curriculums
+      let guestQuery = supabase
+        .from('guest_courses')
+        .select('*')
+        .order('semester', { ascending: true })
+        .order('code', { ascending: true, nullsFirst: false });
+
+      if (filters?.semester && filters.semester !== 'all') {
+        guestQuery = guestQuery.eq('semester', Number(filters.semester));
+      }
+      const targetType =
+        filters?.courseType && filters.courseType !== 'all'
+          ? filters.courseType
+          : filters?.category && filters.category !== 'all'
+          ? filters.category.toUpperCase()
+          : null;
+
+      if (targetType) {
+        guestQuery = guestQuery.eq('course_type', targetType);
+      }
+      if (filters?.kbkId && filters.kbkId !== 'all') {
+        guestQuery = guestQuery.eq('kbk_id', filters.kbkId);
+      }
+      if (filters?.curriculumId && filters.curriculumId !== 'all') {
+        guestQuery = guestQuery.eq('curriculum_id', filters.curriculumId);
+      }
+
+      const [coursesRes, kbkRes, currRes] = await Promise.all([
+        guestQuery,
+        supabase.from('guest_kbk').select('id, name, code'),
+        supabase.from('guest_curriculums').select('id, name, year'),
+      ]);
+
+      if (coursesRes.error) {
+        console.error('Error fetching guest courses:', coursesRes.error);
+        throw new Error(parseSupabaseError(coursesRes.error));
+      }
+
+      const kbkMap = new Map((kbkRes.data || []).map((k: any) => [k.id, k]));
+      const currMap = new Map((currRes.data || []).map((c: any) => [c.id, c]));
+
+      let results: Course[] = (coursesRes.data || []).map((row: any) => ({
+        ...row,
+        effective_sks: row.effective_sks ?? row.sks ?? 0,
+        sks: row.effective_sks ?? row.sks ?? 0,
+        course_type: row.course_type || 'WAJIB',
+        category: row.course_type === 'WAJIB' ? 'Wajib' : 'Pilihan',
+        offerings_count: 0,
+        kbk: kbkMap.get(row.kbk_id) || null,
+        curriculum: currMap.get(row.curriculum_id) || null,
+      }));
+
+      if (filters?.search) {
+        const s = filters.search.toLowerCase().trim();
+        results = results.filter(
+          (c) =>
+            (c.name && c.name.toLowerCase().includes(s)) ||
+            (c.code && c.code.toLowerCase().includes(s))
+        );
+      }
+
+      if (filters?.status && filters.status !== 'all') {
+        if (filters.status === 'schedulable') {
+          results = results.filter((c) => c.is_schedulable && c.activity_type !== 'KKN');
+        } else if (filters.status === 'unschedulable') {
+          results = results.filter((c) => !c.is_schedulable || c.activity_type === 'KKN');
+        }
+      }
+
+      return results;
+    }
+
+    // OWNER ADMIN: Query full courses table
     let query = supabase
       .from('courses')
       .select(`
@@ -165,6 +242,7 @@ export const coursesService = {
   },
 
   async createCourse(data: Partial<Course>): Promise<Course> {
+    await assertOwnerAdmin('menambah mata kuliah');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -220,6 +298,7 @@ export const coursesService = {
   },
 
   async updateCourse(id: string, data: Partial<Course>): Promise<Course> {
+    await assertOwnerAdmin('mengubah mata kuliah');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -274,6 +353,7 @@ export const coursesService = {
   },
 
   async deleteCourse(id: string): Promise<void> {
+    await assertOwnerAdmin('menghapus mata kuliah');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -286,6 +366,7 @@ export const coursesService = {
   },
 
   async toggleSchedulable(id: string, isSchedulable: boolean): Promise<void> {
+    await assertOwnerAdmin('mengubah status schedulable mata kuliah');
     if (!isSupabaseConfigured()) return;
     const { error } = await supabase
       .from('courses')
@@ -298,8 +379,10 @@ export const coursesService = {
   async getCurriculums() {
     if (!isSupabaseConfigured()) return [];
     try {
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'curriculums' : 'guest_curriculums';
       const { data } = await supabase
-        .from('curriculums')
+        .from(table)
         .select('*')
         .order('year', { ascending: false });
       return data || [];
@@ -311,7 +394,9 @@ export const coursesService = {
   async getKBKs() {
     if (!isSupabaseConfigured()) return [];
     try {
-      const { data } = await supabase.from('kbk').select('*').order('name', { ascending: true });
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'kbk' : 'guest_kbk';
+      const { data } = await supabase.from(table).select('*').order('name', { ascending: true });
       return data || [];
     } catch {
       return [];

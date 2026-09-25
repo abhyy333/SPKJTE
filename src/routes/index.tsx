@@ -42,7 +42,6 @@ export const AppRoutes: React.FC = () => {
   const { role, user } = useAuth();
 
   const getDefaultRoute = () => {
-    if (!user) return '/login';
     if (role === 'DOSEN') return '/dosen/dashboard';
     if (role === 'MAHASISWA') return '/mahasiswa/dashboard';
     return '/dashboard';
@@ -70,11 +69,11 @@ export const AppRoutes: React.FC = () => {
         <Route path="/jadwal-ujian" element={<ExamSchedulePage />} />
         <Route path="/pengaturan" element={<SettingsPage />} />
 
-        {/* Admin Only Routes */}
+        {/* Admin / Public Guest Read-Only Routes */}
         <Route
           path="/dashboard"
           element={
-            <RoleGuard allowedRoles={['ADMIN']}>
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
               <AdminDashboard />
             </RoleGuard>
           }
@@ -82,7 +81,7 @@ export const AppRoutes: React.FC = () => {
         <Route
           path="/data-mata-kuliah"
           element={
-            <RoleGuard allowedRoles={['ADMIN']}>
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
               <CoursesPage />
             </RoleGuard>
           }
@@ -90,8 +89,24 @@ export const AppRoutes: React.FC = () => {
         <Route
           path="/data-dosen"
           element={
-            <RoleGuard allowedRoles={['ADMIN']}>
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
               <LecturersPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/ruangan"
+          element={
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
+              <RoomsPage />
+            </RoleGuard>
+          }
+        />
+        <Route
+          path="/penawaran-kelas"
+          element={
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
+              <CourseOfferingsPage />
             </RoleGuard>
           }
         />
@@ -104,26 +119,10 @@ export const AppRoutes: React.FC = () => {
           }
         />
         <Route
-          path="/ruangan"
-          element={
-            <RoleGuard allowedRoles={['ADMIN']}>
-              <RoomsPage />
-            </RoleGuard>
-          }
-        />
-        <Route
           path="/slot-waktu"
           element={
             <RoleGuard allowedRoles={['ADMIN']}>
               <TimeSlotsPage />
-            </RoleGuard>
-          }
-        />
-        <Route
-          path="/penawaran-kelas"
-          element={
-            <RoleGuard allowedRoles={['ADMIN']}>
-              <CourseOfferingsPage />
             </RoleGuard>
           }
         />

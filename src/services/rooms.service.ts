@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Room } from '../types';
 import { parseSupabaseError } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export const roomsService = {
   async getRooms(filters?: { search?: string; type?: string; status?: string }): Promise<Room[]> {
@@ -8,8 +9,11 @@ export const roomsService = {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
 
+    const isOwner = await verifyOwnerAdmin();
+    const table = isOwner ? 'rooms' : 'guest_rooms';
+
     let query = supabase
-      .from('rooms')
+      .from(table)
       .select('*')
       .order('code', { ascending: true });
 
@@ -53,7 +57,10 @@ export const roomsService = {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
 
-    const { data, error } = await supabase.from('rooms').select('*').eq('id', id).single();
+    const isOwner = await verifyOwnerAdmin();
+    const table = isOwner ? 'rooms' : 'guest_rooms';
+
+    const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
     if (error) throw new Error(parseSupabaseError(error));
     return data;
   },
@@ -67,6 +74,7 @@ export const roomsService = {
     is_active?: boolean;
     building?: string;
   }): Promise<Room> {
+    await assertOwnerAdmin('menambah ruangan');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -117,6 +125,7 @@ export const roomsService = {
       building?: string;
     }
   ): Promise<Room> {
+    await assertOwnerAdmin('mengubah data ruangan');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -157,6 +166,7 @@ export const roomsService = {
   },
 
   async deleteRoom(id: string): Promise<void> {
+    await assertOwnerAdmin('menghapus ruangan');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -168,6 +178,7 @@ export const roomsService = {
   },
 
   async toggleRoomActive(id: string, isActive: boolean): Promise<void> {
+    await assertOwnerAdmin('mengubah status aktif ruangan');
     if (!isSupabaseConfigured()) return;
     const { error } = await supabase
       .from('rooms')
@@ -179,7 +190,9 @@ export const roomsService = {
   async getDistinctRoomTypes(): Promise<string[]> {
     if (!isSupabaseConfigured()) return ['Ruang Kuliah Teori', 'Laboratorium Komputer'];
     try {
-      const { data, error } = await supabase.from('rooms').select('room_type');
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'rooms' : 'guest_rooms';
+      const { data, error } = await supabase.from(table).select('room_type');
       if (error) throw error;
       const types = Array.from(new Set((data || []).map((r: any) => r.room_type).filter(Boolean)));
       return types.length > 0 ? types : ['Ruang Kuliah Teori', 'Laboratorium Komputer', 'Laboratorium Elektronika'];
@@ -194,7 +207,9 @@ export const roomsService = {
     }
 
     try {
-      const { data, error } = await supabase.from('rooms').select('*');
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'rooms' : 'guest_rooms';
+      const { data, error } = await supabase.from(table).select('*');
       if (error) throw error;
 
       const total = data?.length || 0;

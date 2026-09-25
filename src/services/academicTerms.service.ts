@@ -1,14 +1,18 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { AcademicTerm } from '../types';
 import { parseSupabaseError } from '../lib/utils';
+import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
 export const academicTermsService = {
   async getAcademicTerms(): Promise<AcademicTerm[]> {
     if (!isSupabaseConfigured()) return [];
 
     try {
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'academic_terms' : 'guest_academic_terms';
+
       const { data, error } = await supabase
-        .from('academic_terms')
+        .from(table)
         .select('*')
         .order('academic_year', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
@@ -36,8 +40,11 @@ export const academicTermsService = {
     if (!isSupabaseConfigured()) return null;
 
     try {
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'academic_terms' : 'guest_academic_terms';
+
       const { data, error } = await supabase
-        .from('academic_terms')
+        .from(table)
         .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
@@ -67,6 +74,7 @@ export const academicTermsService = {
     ends_on?: string | null;
     is_active?: boolean;
   }): Promise<AcademicTerm> {
+    await assertOwnerAdmin('menambah periode akademik');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -111,6 +119,7 @@ export const academicTermsService = {
       is_active?: boolean;
     }
   ): Promise<AcademicTerm> {
+    await assertOwnerAdmin('memperbarui periode akademik');
     if (!isSupabaseConfigured()) {
       throw new Error('Koneksi database belum dikonfigurasi.');
     }
@@ -142,6 +151,7 @@ export const academicTermsService = {
   },
 
   async setActiveTerm(id: string): Promise<void> {
+    await assertOwnerAdmin('mengubah periode aktif');
     if (!isSupabaseConfigured()) return;
     // Set all to false, then set selected to true
     await supabase.from('academic_terms').update({ is_active: false }).neq('id', id);

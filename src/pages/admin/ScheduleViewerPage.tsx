@@ -14,10 +14,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ScheduleWorkspace } from '../../components/schedule/ScheduleWorkspace';
 
 export const ScheduleViewerPage: React.FC = () => {
-  const { role } = useAuth();
+  const { role, isOwnerAdmin } = useAuth();
 
-  // If role is ADMIN, render the Phase 3 manual scheduling workspace
-  if (role === 'ADMIN') {
+  // ONLY the verified owner admin can access the Phase 3 manual scheduling workspace
+  if (role === 'ADMIN' && isOwnerAdmin) {
     return (
       <div className="space-y-4">
         <PageHeader
@@ -29,7 +29,7 @@ export const ScheduleViewerPage: React.FC = () => {
     );
   }
 
-  // Otherwise (DOSEN or MAHASISWA), render the read-only published schedule viewer
+  // Otherwise (GUEST, DOSEN, MAHASISWA, or non-owner admin), render the read-only published schedule viewer
   return <ReadOnlyScheduleViewer />;
 };
 
