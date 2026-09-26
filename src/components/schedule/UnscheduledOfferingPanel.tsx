@@ -208,9 +208,27 @@ export const UnscheduledOfferingPanel: React.FC<UnscheduledOfferingPanelProps> =
                   </div>
                 </div>
 
+                {/* Action button */}
+                <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-3xs text-slate-400 font-medium">
+                    Semester {course?.semester || 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectOffering(offering);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-3xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-all border border-blue-200 cursor-pointer shadow-2xs"
+                  >
+                    <PlusCircle className="w-3 h-3" />
+                    Atur Jadwal
+                  </button>
+                </div>
+
                 {/* Readiness Badges */}
                 {!isReady && (
-                  <div className="mt-2 pt-1.5 border-t border-slate-100 flex flex-wrap gap-1">
+                  <div className="mt-1.5 pt-1 border-t border-slate-100 flex flex-wrap gap-1">
                     {expectedStudents === 0 && (
                       <span className="inline-flex items-center gap-0.5 text-3xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                         <AlertCircle className="w-2.5 h-2.5 text-amber-600" />

@@ -411,7 +411,7 @@ export const coursesService = {
     try {
       const { data: courses, error } = await supabase
         .from('courses')
-        .select('id, course_type, is_schedulable, activity_type');
+        .select('id, course_type, is_schedulable, activity_type, metadata');
 
       if (error) throw error;
 
@@ -419,10 +419,16 @@ export const coursesService = {
         .from('course_offerings')
         .select('*', { count: 'exact', head: true });
 
-      const total = courses?.length || 0;
-      const schedulable = courses?.filter((c) => c.is_schedulable && c.activity_type !== 'KKN').length || 0;
-      const wajib = courses?.filter((c) => c.course_type === 'WAJIB').length || 0;
-      const pilihan = courses?.filter((c) => c.course_type === 'PILIHAN').length || 0;
+      // Master catalog filter: only count metadata->>'master_catalog' = 'true'
+      const masterCourses = (courses || []).filter(
+        (c) => c.metadata?.master_catalog === true || c.metadata?.master_catalog === 'true'
+      );
+      const catalogList = masterCourses.length > 0 ? masterCourses : (courses || []);
+
+      const total = catalogList.length;
+      const schedulable = catalogList.filter((c) => c.is_schedulable && c.activity_type !== 'KKN').length;
+      const wajib = catalogList.filter((c) => c.course_type === 'WAJIB').length;
+      const pilihan = catalogList.filter((c) => c.course_type === 'PILIHAN').length;
 
       return {
         total,

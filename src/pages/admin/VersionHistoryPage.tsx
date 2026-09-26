@@ -10,6 +10,7 @@ import {
   Scale,
   ArrowRight,
   X,
+  Copy,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
@@ -18,8 +19,11 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { versionsService } from '../../services/versions.service';
+import { scheduleVersionsService } from '../../services/scheduleVersions.service';
 import { ScheduleVersion } from '../../types';
 import { formatDateTimeIndo } from '../../lib/utils';
+import { VersionComparisonModal } from '../../components/schedule/versioning/VersionComparisonModal';
+import { toast } from '../../components/ui/Toast';
 
 export const VersionHistoryPage: React.FC = () => {
   const [versions, setVersions] = useState<ScheduleVersion[]>([]);
@@ -34,8 +38,10 @@ export const VersionHistoryPage: React.FC = () => {
     rollbackAvailable: 0,
   });
 
-  // Comparison Box State
-  const [comparingVersion, setComparingVersion] = useState<ScheduleVersion | null>(null);
+  // Comparison State
+  const [compareModalOpen, setCompareModalOpen] = useState(false);
+  const [compVersionAId, setCompVersionAId] = useState<string>('');
+  const [compVersionBId, setCompVersionBId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const fetchVersionsData = async () => {
@@ -48,8 +54,12 @@ export const VersionHistoryPage: React.FC = () => {
       ]);
       setVersions(list);
       setStats(s);
-      if (list.length > 0) {
-        setComparingVersion(list[0]);
+      if (list.length > 1) {
+        setCompVersionAId(list[0].id);
+        setCompVersionBId(list[1].id);
+      } else if (list.length > 0) {
+        setCompVersionAId(list[0].id);
+        setCompVersionBId(list[0].id);
       }
     } catch (err: any) {
       setError(err.message || 'Gagal memuat riwayat versi.');
@@ -200,17 +210,18 @@ export const VersionHistoryPage: React.FC = () => {
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button
-                          onClick={() => setComparingVersion(ver)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-2xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                          onClick={() => {
+                            if (versions.length > 1) {
+                              setCompVersionAId(versions[0].id);
+                              setCompVersionBId(ver.id);
+                              setCompareModalOpen(true);
+                            } else {
+                              toast.info('Diperlukan minimal dua versi jadwal untuk melakukan komparasi.');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-2xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors cursor-pointer"
                         >
-                          <Eye className="w-3 h-3" />
-                          Detail
-                        </button>
-                        <button
-                          onClick={() => setComparingVersion(ver)}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-2xs font-semibold text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors"
-                        >
-                          <Scale className="w-3 h-3" />
+                          <Scale className="w-3 h-3 text-purple-600" />
                           Bandingkan
                         </button>
                       </div>
@@ -223,74 +234,14 @@ export const VersionHistoryPage: React.FC = () => {
         )}
       </div>
 
-      {/* Perbandingan Perubahan Viewer (Matching Screenshot) */}
-      {comparingVersion && (
-        <div className="bg-white rounded-xl border border-blue-200/90 shadow-sm p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <Scale className="w-4 h-4 text-blue-600" />
-              <h4 className="text-sm font-bold text-slate-800">
-                Perbandingan Perubahan — {comparingVersion.version_number || 'v1.1.0'}
-              </h4>
-              <StatusBadge label="Viewer Phase 1" variant="draft" size="sm" />
-            </div>
-            <button
-              onClick={() => setComparingVersion(null)}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Sebelum */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs pb-1">
-                <span className="font-bold text-slate-700">Versi Sebelumnya (Baseline)</span>
-                <span className="text-slate-400 text-2xs">3 kelas terpengaruh</span>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
-                <div className="flex justify-between items-center text-2xs text-slate-500 font-semibold border-b pb-1">
-                  <span>Waktu & MK</span>
-                  <span>Ruangan & Kelas</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-700">
-                  <span>10:00 – 11:40 • Basis Data</span>
-                  <span className="font-mono bg-white px-1.5 py-0.5 rounded border">R. Lab Kom 1 (A)</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-700">
-                  <span>13:00 – 14:40 • Rekayasa Trafik</span>
-                  <span className="font-mono bg-white px-1.5 py-0.5 rounded border">R. E201 (A)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sesudah */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs pb-1">
-                <span className="font-bold text-emerald-700">Versi Ini (Revisi Baru)</span>
-                <span className="text-emerald-600 text-2xs font-semibold">Telah Dioptimalkan</span>
-              </div>
-              <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200 text-xs space-y-2">
-                <div className="flex justify-between items-center text-2xs text-emerald-700 font-semibold border-b border-emerald-100 pb-1">
-                  <span>Waktu & MK</span>
-                  <span>Ruangan & Kelas</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-800">
-                  <span>10:00 – 11:40 • Basis Data</span>
-                  <span className="font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-300 font-bold">
-                    R. Lab Kom 2 (A)
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-slate-800">
-                  <span>13:00 – 14:40 • Rekayasa Trafik</span>
-                  <span className="font-mono bg-white px-1.5 py-0.5 rounded border">R. E201 (A)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Version Comparison Modal */}
+      <VersionComparisonModal
+        isOpen={compareModalOpen}
+        onClose={() => setCompareModalOpen(false)}
+        versions={versions}
+        initialVersionAId={compVersionAId}
+        initialVersionBId={compVersionBId}
+      />
     </div>
   );
 };

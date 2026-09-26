@@ -15,13 +15,21 @@ export const schedulesService = {
       const { data, error } = await supabase
         .from('academic_terms')
         .select('*')
-        .order('year', { ascending: false });
+        .order('academic_year', { ascending: false });
 
       if (error) {
         console.warn('Academic terms error:', error);
         return [];
       }
-      return data || [];
+      return (data || []).map((row: any) => ({
+        ...row,
+        academic_year: row.academic_year || row.year || '2026/2027',
+        semester_type: row.semester_type || row.term || 'GANJIL',
+        year: row.academic_year || row.year || '2026/2027',
+        term: row.semester_type || row.term || 'GANJIL',
+        starts_on: row.starts_on || row.start_date,
+        ends_on: row.ends_on || row.end_date,
+      }));
     } catch {
       return [];
     }
@@ -37,11 +45,19 @@ export const schedulesService = {
         .eq('is_active', true)
         .maybeSingle();
 
-      if (error) {
+      if (error || !data) {
         console.warn('Active term lookup error:', error);
         return null;
       }
-      return data;
+      return {
+        ...data,
+        academic_year: data.academic_year || data.year || '2026/2027',
+        semester_type: data.semester_type || data.term || 'GANJIL',
+        year: data.academic_year || data.year || '2026/2027',
+        term: data.semester_type || data.term || 'GANJIL',
+        starts_on: data.starts_on || data.start_date,
+        ends_on: data.ends_on || data.end_date,
+      };
     } catch {
       return null;
     }

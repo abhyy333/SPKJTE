@@ -90,9 +90,13 @@ const ReadOnlyScheduleViewer: React.FC = () => {
         badge={
           activeTerm ? (
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-              {activeTerm.term || activeTerm.semester_type} {activeTerm.year || activeTerm.academic_year}
+              {activeTerm.academic_year || activeTerm.year} {activeTerm.semester_type || activeTerm.term}
             </span>
-          ) : undefined
+          ) : (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              2026/2027 GANJIL
+            </span>
+          )
         }
         actions={
           schedules.length > 0 ? (

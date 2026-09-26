@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AcademicTerm,
   ScheduleVersion,
@@ -26,12 +27,16 @@ import { ScheduleGrid } from './ScheduleGrid';
 import { ScheduleEditorDrawer } from './ScheduleEditorDrawer';
 import { ScheduleDetailDrawer } from './ScheduleDetailDrawer';
 import { ScheduleConflictPanel } from './ScheduleConflictPanel';
+import { SimulatedAnnealingModal } from './optimizer/SimulatedAnnealingModal';
+import { SmartSuggestionModal } from './suggestions/SmartSuggestionModal';
+import { VersionComparisonModal } from './versioning/VersionComparisonModal';
+import { VersionHistoryDrawer } from './versioning/VersionHistoryDrawer';
 import { EmptyState } from '../ui/EmptyState';
 import { LoadingState } from '../ui/LoadingState';
 import { ErrorState } from '../ui/ErrorState';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { toast } from '../ui/Toast';
-import { Calendar, PlusCircle, AlertCircle } from 'lucide-react';
+import { Calendar, PlusCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { minuteToTime, dayOfWeekToName, parseSupabaseError } from '../../lib/utils';
 
 export const ScheduleWorkspace: React.FC = () => {
@@ -73,7 +78,21 @@ export const ScheduleWorkspace: React.FC = () => {
   const [detailDrawerOpen, setDetailDrawerOpen] = useState<boolean>(false);
   const [selectedEntryForDetail, setSelectedEntryForDetail] = useState<ScheduleEntry | null>(null);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [workspaceMode, setWorkspaceMode] = useState<'MANUAL' | 'AUTO'>('MANUAL');
+
   const [conflictPanelOpen, setConflictPanelOpen] = useState<boolean>(false);
+  const [saModalOpen, setSaModalOpen] = useState<boolean>(false);
+
+  // Phase 5: Smart Suggestions & Version Control state
+  const [smartSuggestionModalOpen, setSmartSuggestionModalOpen] = useState<boolean>(false);
+  const [suggestionTargetEntry, setSuggestionTargetEntry] = useState<ScheduleEntry | null>(null);
+  const [suggestionTargetConflict, setSuggestionTargetConflict] = useState<ClientConflict | null>(null);
+
+  const [versionComparisonModalOpen, setVersionComparisonModalOpen] = useState<boolean>(false);
+  const [compVersionAId, setCompVersionAId] = useState<string>('');
+  const [compVersionBId, setCompVersionBId] = useState<string>('');
+  const [versionHistoryDrawerOpen, setVersionHistoryDrawerOpen] = useState<boolean>(false);
 
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState<boolean>(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -264,6 +283,23 @@ export const ScheduleWorkspace: React.FC = () => {
     }
   };
 
+  // Check URL query action=generate to launch Simulated Annealing
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'generate') {
+      if (selectedVersionId) {
+        setSaModalOpen(true);
+        setWorkspaceMode('AUTO');
+        searchParams.delete('action');
+        setSearchParams(searchParams, { replace: true });
+      } else if (!loading && versions.length === 0 && selectedTermId) {
+        handleOpenCreateModal();
+        searchParams.delete('action');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [searchParams, selectedVersionId, loading, versions, selectedTermId, setSearchParams]);
+
   // Handle open create draft modal
   const handleOpenCreateModal = () => {
     const term = terms.find((t) => t.id === selectedTermId);
@@ -404,6 +440,12 @@ export const ScheduleWorkspace: React.FC = () => {
     toast.success(`${entry.course_name || 'Kelas'} dikeluarkan dari rancangan jadwal.`);
   };
 
+  // Apply Simulated Annealing solution to draft
+  const handleApplySASolution = (newEntries: ScheduleEntry[]) => {
+    setDraftEntries(newEntries);
+    setHasUnsavedChanges(true);
+  };
+
   // Save draft entries snapshot using RPC
   const handleSaveDraft = async () => {
     if (!selectedVersion) return;
@@ -479,7 +521,84 @@ export const ScheduleWorkspace: React.FC = () => {
         onCreateDraftClick={handleOpenCreateModal}
         onSaveClick={handleSaveDraft}
         onCheckConflictsClick={() => setConflictPanelOpen(true)}
+        onOpenSAModalClick={() => setSaModalOpen(true)}
+        onOpenSuggestionsClick={() => {
+          setSuggestionTargetEntry(null);
+          setSuggestionTargetConflict(null);
+          setSmartSuggestionModalOpen(true);
+        }}
+        onOpenVersionDrawerClick={() => setVersionHistoryDrawerOpen(true)}
+        onOpenComparisonClick={() => {
+          if (versions.length > 1) {
+            setCompVersionAId(versions[0].id);
+            setCompVersionBId(versions[1].id);
+            setVersionComparisonModalOpen(true);
+          }
+        }}
       />
+
+      {/* Mode Switcher Tabs: Susun Manual vs Optimasi Otomatis */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200/90 shadow-2xs">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setWorkspaceMode('MANUAL')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              workspaceMode === 'MANUAL'
+                ? 'bg-white text-blue-700 shadow-xs border border-slate-200/70'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="w-4 h-4 text-blue-600" />
+            1. Susun Manual
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setWorkspaceMode('AUTO');
+              if (!selectedVersion) {
+                handleOpenCreateModal();
+              } else {
+                setSaModalOpen(true);
+              }
+            }}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              workspaceMode === 'AUTO'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            2. Optimasi Otomatis (Simulated Annealing)
+          </button>
+        </div>
+
+        {selectedVersion && (
+          <div className="flex items-center justify-end gap-3 text-xs text-slate-500 px-2">
+            <span>
+              Terjadwal:{' '}
+              <strong className="text-slate-800 font-bold">
+                {draftEntries.length} / {termOfferings.length}
+              </strong>{' '}
+              kelas
+            </span>
+            <span>•</span>
+            <span>
+              Konflik:{' '}
+              <strong
+                className={
+                  clientConflicts.length > 0
+                    ? 'text-rose-600 font-bold'
+                    : 'text-emerald-600 font-bold'
+                }
+              >
+                {clientConflicts.length}
+              </strong>
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* When no version exists for selected term */}
       {!selectedVersion && (
@@ -557,6 +676,11 @@ export const ScheduleWorkspace: React.FC = () => {
         conflicts={clientConflicts}
         onEdit={handleEditEntry}
         onRemove={handleRemoveEntry}
+        onGetSuggestion={(entry) => {
+          setSuggestionTargetEntry(entry);
+          setSuggestionTargetConflict(null);
+          setSmartSuggestionModalOpen(true);
+        }}
       />
 
       {/* Drawer: Conflict Detection Panel */}
@@ -574,6 +698,65 @@ export const ScheduleWorkspace: React.FC = () => {
             }
           }
         }}
+        onGetSuggestion={(conflict) => {
+          setSuggestionTargetConflict(conflict);
+          setSuggestionTargetEntry(null);
+          setSmartSuggestionModalOpen(true);
+        }}
+      />
+
+      {/* Modal: Smart Suggestion & Partial Optimization */}
+      <SmartSuggestionModal
+        isOpen={smartSuggestionModalOpen}
+        onClose={() => {
+          setSmartSuggestionModalOpen(false);
+          setSuggestionTargetEntry(null);
+          setSuggestionTargetConflict(null);
+        }}
+        versionId={selectedVersionId}
+        currentEntries={draftEntries}
+        targetEntry={suggestionTargetEntry}
+        targetConflict={suggestionTargetConflict}
+        rooms={rooms}
+        timeSlots={timeSlots}
+        availabilities={availabilities}
+        offerings={termOfferings}
+        lecturers={lecturers}
+        onApplyEntries={(newEntries) => {
+          setDraftEntries(newEntries);
+          setHasUnsavedChanges(true);
+        }}
+      />
+
+      {/* Drawer: Version History & Branching */}
+      <VersionHistoryDrawer
+        isOpen={versionHistoryDrawerOpen}
+        onClose={() => setVersionHistoryDrawerOpen(false)}
+        versions={versions}
+        selectedVersionId={selectedVersionId}
+        onSelectVersion={(vId) => handleVersionChange(vId)}
+        onOpenComparison={(vA, vB) => {
+          setCompVersionAId(vA);
+          setCompVersionBId(vB);
+          setVersionComparisonModalOpen(true);
+        }}
+        onVersionCreated={(newVer) => {
+          if (selectedTermId) {
+            loadTermData(selectedTermId);
+          }
+          setSelectedVersionId(newVer.id);
+          setSelectedVersion(newVer);
+        }}
+        termId={selectedTermId}
+      />
+
+      {/* Modal: Version Comparison Diff */}
+      <VersionComparisonModal
+        isOpen={versionComparisonModalOpen}
+        onClose={() => setVersionComparisonModalOpen(false)}
+        versions={versions}
+        initialVersionAId={compVersionAId}
+        initialVersionBId={compVersionBId}
       />
 
       {/* Modal: Create Draft */}
@@ -627,6 +810,20 @@ export const ScheduleWorkspace: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Simulated Annealing Optimization Modal */}
+      <SimulatedAnnealingModal
+        isOpen={saModalOpen}
+        onClose={() => setSaModalOpen(false)}
+        term={selectedTerm || null}
+        offerings={termOfferings}
+        rooms={rooms}
+        timeSlots={timeSlots}
+        availabilities={availabilities}
+        lecturers={lecturers}
+        currentVersionId={selectedVersionId}
+        onApplySolution={handleApplySASolution}
+      />
 
       {/* Confirm Unsaved Leave Dialog */}
       <ConfirmDialog

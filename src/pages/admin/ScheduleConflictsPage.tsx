@@ -23,13 +23,31 @@ import { scheduleConflictsService } from '../../services/scheduleConflicts.servi
 import { scheduleVersionsService } from '../../services/scheduleVersions.service';
 import { ScheduleConflict, ScheduleVersion } from '../../types';
 import { toast } from '../../components/ui/Toast';
+import { SmartSuggestion } from '../../scheduling/suggestions/types';
+import { generateSuggestionsForConflict } from '../../scheduling/suggestions/suggestionEngine';
+import { SuggestionCard } from '../../components/schedule/suggestions/SuggestionCard';
+import { roomsService } from '../../services/rooms.service';
+import { timeSlotsService } from '../../services/timeSlots.service';
+import { scheduleEntriesService } from '../../services/scheduleEntries.service';
+import { courseOfferingsService } from '../../services/courseOfferings.service';
+import { scheduleSuggestionsService } from '../../services/scheduleSuggestions.service';
+import { Room, TimeSlot, ScheduleEntry, CourseOffering } from '../../types';
 
 export const ScheduleConflictsPage: React.FC = () => {
   const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [versions, setVersions] = useState<ScheduleVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<string>('all');
+  const [selectedConflict, setSelectedConflict] = useState<ScheduleConflict | null>(null);
+  const [suggestions, setSuggestions] = useState<SmartSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Master data caches for suggestions
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [versionEntries, setVersionEntries] = useState<ScheduleEntry[]>([]);
+  const [offerings, setOfferings] = useState<CourseOffering[]>([]);
 
   // Stats (NO student conflicts)
   const [stats, setStats] = useState({
@@ -48,7 +66,7 @@ export const ScheduleConflictsPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [verList, list, s] = await Promise.all([
+      const [verList, list, s, rList, tList, offList] = await Promise.all([
         scheduleVersionsService.getVersions(),
         scheduleConflictsService.getConflicts(
           selectedVersionId !== 'all' ? selectedVersionId : undefined,
@@ -60,11 +78,22 @@ export const ScheduleConflictsPage: React.FC = () => {
         scheduleConflictsService.getStats(
           selectedVersionId !== 'all' ? selectedVersionId : undefined
         ),
+        roomsService.getRooms(),
+        timeSlotsService.getTimeSlots({ activeOnly: true }),
+        courseOfferingsService.getOfferings(),
       ]);
 
       setVersions(verList);
       setConflicts(list);
       setStats(s);
+      setRooms(rList);
+      setTimeSlots(tList);
+      setOfferings(offList);
+
+      if (selectedVersionId && selectedVersionId !== 'all') {
+        const entries = await scheduleEntriesService.getEntriesByVersionId(selectedVersionId);
+        setVersionEntries(entries);
+      }
     } catch (err: any) {
       setError(err.message || 'Gagal memuat konflik jadwal.');
     } finally {
@@ -75,6 +104,49 @@ export const ScheduleConflictsPage: React.FC = () => {
   useEffect(() => {
     fetchConflictsData();
   }, [selectedVersionId, severityFilter, typeFilter]);
+
+  // Handle selecting a conflict to compute suggestions
+  const handleSelectConflict = async (conflict: ScheduleConflict) => {
+    setSelectedConflict(conflict);
+    setLoadingSuggestions(true);
+
+    try {
+      let entries = versionEntries;
+      if (conflict.schedule_version_id && (!entries || entries.length === 0)) {
+        entries = await scheduleEntriesService.getEntriesByVersionId(conflict.schedule_version_id);
+        setVersionEntries(entries);
+      }
+
+      // Format ClientConflict
+      const clientConf = {
+        id: conflict.id,
+        type: conflict.conflict_type as any,
+        severity: (conflict.severity?.toUpperCase() || 'HIGH') as any,
+        title: conflict.title,
+        description: conflict.description,
+        entryIds: [],
+        courseOfferingIds: [],
+      };
+
+      const generated = generateSuggestionsForConflict({
+        conflict: clientConf,
+        currentEntries: entries,
+        rooms,
+        activeTimeSlots: timeSlots,
+        availabilities: [],
+        offerings,
+        lecturers: [],
+        versionId: conflict.schedule_version_id || undefined,
+        maxSuggestions: 5,
+      });
+
+      setSuggestions(generated);
+    } catch (err) {
+      console.error('Error generating suggestions for conflict:', err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
 
   const filteredConflicts = conflicts.filter((c) => {
     if (!search.trim()) return true;
@@ -240,7 +312,13 @@ export const ScheduleConflictsPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredConflicts.map((c, idx) => (
-                    <tr key={c.id} className="hover:bg-rose-50/20 transition-colors">
+                    <tr
+                      key={c.id}
+                      onClick={() => handleSelectConflict(c)}
+                      className={`hover:bg-blue-50/40 transition-colors cursor-pointer ${
+                        selectedConflict?.id === c.id ? 'bg-blue-50/70 font-medium' : ''
+                      }`}
+                    >
                       <td className="py-3 px-3 text-slate-400 font-mono">{idx + 1}</td>
                       <td className="py-3 px-3">
                         <span
@@ -287,22 +365,62 @@ export const ScheduleConflictsPage: React.FC = () => {
           )}
         </div>
 
-        {/* Right Column: Schedule Suggestions Placeholder */}
+        {/* Right Column: Schedule Suggestions Panel */}
         <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Sparkles className="w-4 h-4 text-blue-600" />
-            <h4 className="text-sm font-bold text-slate-800">Rekomendasi Penyesuaian</h4>
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <h4 className="text-sm font-bold text-slate-800">Rekomendasi Penyesuaian</h4>
+            </div>
+            {selectedConflict && (
+              <span className="text-3xs font-mono text-slate-400">
+                {selectedConflict.conflict_type}
+              </span>
+            )}
           </div>
 
-          <div className="p-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center space-y-2">
-            <Info className="w-8 h-8 text-blue-500 mx-auto" />
-            <p className="text-xs font-semibold text-slate-700">
-              Rekomendasi Pemindahan Jadwal
-            </p>
-            <p className="text-2xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-              Rekomendasi pemindahan jadwal akan tersedia pada fase optimasi berikutnya menggunakan algoritma metaheuristik.
-            </p>
-          </div>
+          {loadingSuggestions ? (
+            <div className="py-8 text-center text-slate-500 space-y-2">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs">Menganalisis alternatif bebas bentrok...</p>
+            </div>
+          ) : selectedConflict && suggestions.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-2xs text-slate-500">
+                Pilih solusi untuk mengatasi bentrok pada{' '}
+                <strong className="text-slate-700">{selectedConflict.title}</strong>:
+              </p>
+              {suggestions.map((s) => (
+                <SuggestionCard
+                  key={s.id}
+                  suggestion={s}
+                  onApply={async (sugg) => {
+                    toast.success(`Saran untuk ${sugg.courseName} dipilih.`);
+                  }}
+                />
+              ))}
+            </div>
+          ) : selectedConflict && suggestions.length === 0 ? (
+            <div className="p-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center space-y-2">
+              <Info className="w-6 h-6 text-amber-500 mx-auto" />
+              <p className="text-xs font-semibold text-slate-700">
+                Tidak ada saran langsung sederhana
+              </p>
+              <p className="text-2xs text-slate-500">
+                Konflik ini memerlukan penyesuaian multi-kelas. Buka Draft Workspace untuk menjalankan Optimasi Parsial.
+              </p>
+            </div>
+          ) : (
+            <div className="p-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center space-y-2">
+              <Info className="w-8 h-8 text-blue-500 mx-auto" />
+              <p className="text-xs font-semibold text-slate-700">
+                Pilih Baris Konflik
+              </p>
+              <p className="text-2xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                Klik salah satu baris konflik di tabel sebelah kiri untuk melihat rekomendasi alternatif slot waktu atau ruangan bebas bentrok.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

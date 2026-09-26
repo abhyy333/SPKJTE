@@ -10,6 +10,7 @@ import {
   Calendar,
   Layers,
   History,
+  Sparkles,
 } from 'lucide-react';
 
 interface ScheduleToolbarProps {
@@ -28,6 +29,10 @@ interface ScheduleToolbarProps {
   onCreateDraftClick: () => void;
   onSaveClick: () => void;
   onCheckConflictsClick: () => void;
+  onOpenSAModalClick?: () => void;
+  onOpenSuggestionsClick?: () => void;
+  onOpenVersionDrawerClick?: () => void;
+  onOpenComparisonClick?: () => void;
 }
 
 export const ScheduleToolbar: React.FC<ScheduleToolbarProps> = ({
@@ -46,6 +51,10 @@ export const ScheduleToolbar: React.FC<ScheduleToolbarProps> = ({
   onCreateDraftClick,
   onSaveClick,
   onCheckConflictsClick,
+  onOpenSAModalClick,
+  onOpenSuggestionsClick,
+  onOpenVersionDrawerClick,
+  onOpenComparisonClick,
 }) => {
   const isDraft = selectedVersion?.status === 'DRAFT' || !selectedVersion?.status;
   const revision = selectedVersion?.revision ?? 0;
@@ -164,6 +173,57 @@ export const ScheduleToolbar: React.FC<ScheduleToolbarProps> = ({
                   {conflictCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* Smart Suggestions Button (Phase 5) */}
+          {selectedVersion && onOpenSuggestionsClick && (
+            <button
+              type="button"
+              onClick={onOpenSuggestionsClick}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border transition-all shadow-2xs cursor-pointer ${
+                conflictCount > 0
+                  ? 'text-amber-800 bg-amber-50 hover:bg-amber-100 border-amber-200 animate-pulse'
+                  : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+              Saran Cerdas (Smart Suggestions)
+            </button>
+          )}
+
+          {/* Simulated Annealing Optimization Button */}
+          {selectedVersion && onOpenSAModalClick && (
+            <button
+              type="button"
+              onClick={onOpenSAModalClick}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/90 rounded-xl transition-all shadow-2xs cursor-pointer group"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 group-hover:rotate-12 transition-transform" />
+              Optimasi SA
+            </button>
+          )}
+
+          {/* Version History & Compare Buttons */}
+          {selectedVersion && onOpenVersionDrawerClick && (
+            <button
+              type="button"
+              onClick={onOpenVersionDrawerClick}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-2xs cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5 text-purple-600" />
+              Riwayat Versi
+            </button>
+          )}
+
+          {versions.length > 1 && onOpenComparisonClick && (
+            <button
+              type="button"
+              onClick={onOpenComparisonClick}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition-all shadow-2xs cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5 text-purple-600" />
+              Bandingkan
             </button>
           )}
         </div>

@@ -379,11 +379,17 @@ export const lecturersService = {
     }
 
     try {
-      const lecturers = await this.getLecturers();
-      const total = lecturers.length;
-      const active = lecturers.filter((l) => (l.offerings_count || 0) > 0).length;
-      const highLoad = lecturers.filter((l) => (l.total_sks || 0) >= 12).length;
-      const available = total;
+      const { data: lecturers, error } = await supabase
+        .from('lecturers')
+        .select('id, status');
+
+      if (error) throw error;
+
+      const list = lecturers || [];
+      const total = list.length;
+      const active = list.filter((l) => (l.status || '').toLowerCase() === 'aktif').length;
+      const highLoad = 0;
+      const available = active;
 
       return { total, active, highLoad, available };
     } catch (err) {

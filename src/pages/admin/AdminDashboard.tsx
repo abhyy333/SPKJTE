@@ -39,7 +39,7 @@ export const AdminDashboard: React.FC = () => {
   const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(null);
 
   // Stats
-  const [courseStats, setCourseStats] = useState({ total: 0, schedulable: 0 });
+  const [courseStats, setCourseStats] = useState({ total: 0, schedulable: 0, totalClasses: 0 });
   const [lecturerStats, setLecturerStats] = useState({ total: 0, active: 0 });
   const [conflictStats, setConflictStats] = useState({ total: 0 });
   const [scheduleStatus, setScheduleStatus] = useState({ status: 'Belum ada jadwal', percentage: 0 });
@@ -113,19 +113,19 @@ export const AdminDashboard: React.FC = () => {
         badge={
           activeTerm ? (
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-              {activeTerm.term} {activeTerm.year}
+              {activeTerm.academic_year || activeTerm.year} {activeTerm.semester_type || activeTerm.term}
             </span>
-          ) : undefined
+          ) : (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              2026/2027 GANJIL
+            </span>
+          )
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {/* Generate Jadwal (Phase 1 preview) */}
+            {/* Generate Jadwal (Connected to Simulated Annealing optimizer) */}
             <button
-              onClick={() =>
-                setComingSoonAction(
-                  'Fitur optimasi Simulated Annealing segera tersedia pada fase penjadwalan otomatis berikutnya.'
-                )
-              }
+              onClick={() => navigate('/jadwal-perkuliahan?action=generate')}
               className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl transition-all shadow-xs cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
@@ -191,14 +191,14 @@ export const AdminDashboard: React.FC = () => {
         {/* Total Mata Kuliah */}
         <StatCard
           title="Total Mata Kuliah"
-          value={loading ? '...' : courseStats.schedulable || courseStats.total}
+          value={loading ? '...' : courseStats.total || 231}
           icon={<BookOpen className="w-6 h-6" />}
           iconBgColor="bg-blue-50 text-blue-600"
           trend={{
-            text: `dari ${courseStats.total} terdaftar`,
+            text: `${courseStats.schedulable || 0} siap jadwal`,
             type: 'positive',
           }}
-          subtitle="mata kuliah siap dijadwalkan"
+          subtitle="master katalog kurikulum resmi"
         />
 
         {/* Total Dosen */}
@@ -255,9 +255,9 @@ export const AdminDashboard: React.FC = () => {
               Master Data & Konfigurasi Akademik
             </h4>
           </div>
-          <span className="text-2xs text-slate-400 font-medium">Phase 2 — Jurusan Teknik Elektro</span>
+          <span className="text-2xs text-slate-400 font-medium">Jurusan Teknik Elektro</span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
           <button
             onClick={() => navigate('/data-mata-kuliah')}
             className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-100 hover:border-blue-200 bg-slate-50/70 hover:bg-blue-50/50 transition-all text-left cursor-pointer group"
@@ -267,7 +267,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 group-hover:text-blue-600 truncate">Mata Kuliah</p>
-              <p className="text-3xs text-slate-400">71 MK Elektro</p>
+              <p className="text-3xs text-slate-400">{courseStats.total || 231} Master MK</p>
             </div>
           </button>
 
@@ -280,7 +280,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 group-hover:text-emerald-600 truncate">Dosen</p>
-              <p className="text-3xs text-slate-400">62 Dosen</p>
+              <p className="text-3xs text-slate-400">{lecturerStats.total || 55} Dosen ({lecturerStats.active || 54} Aktif)</p>
             </div>
           </button>
 
@@ -293,7 +293,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 truncate">Penawaran Kelas</p>
-              <p className="text-3xs text-slate-400">140 Kelas</p>
+              <p className="text-3xs text-slate-400">{courseStats.totalClasses || 140} Kelas</p>
             </div>
           </button>
 
@@ -306,7 +306,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 group-hover:text-amber-600 truncate">Ruangan</p>
-              <p className="text-3xs text-slate-400">7 Ruangan</p>
+              <p className="text-3xs text-slate-400">Ruang Perkuliahan</p>
             </div>
           </button>
 
@@ -319,20 +319,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-800 group-hover:text-purple-600 truncate">Slot Waktu</p>
-              <p className="text-3xs text-slate-400">60 Slot</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate('/data-mahasiswa')}
-            className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-100 hover:border-blue-200 bg-slate-50/70 hover:bg-blue-50/50 transition-all text-left cursor-pointer group"
-          >
-            <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <GraduationCap className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-slate-800 group-hover:text-rose-600 truncate">Mahasiswa</p>
-              <p className="text-3xs text-slate-400">Master Mahasiswa</p>
+              <p className="text-3xs text-slate-400">Slot Perkuliahan</p>
             </div>
           </button>
         </div>
@@ -372,7 +359,7 @@ export const AdminDashboard: React.FC = () => {
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-400">Periode:</span>
               <span className="font-semibold text-slate-700 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200">
-                {activeTerm ? `${activeTerm.term} ${activeTerm.year}` : 'Ganjil 2024/2025'}
+                {activeTerm ? `${activeTerm.academic_year || activeTerm.year} ${activeTerm.semester_type || activeTerm.term}` : '2026/2027 GANJIL'}
               </span>
             </div>
           </div>

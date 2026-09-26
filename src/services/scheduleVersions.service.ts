@@ -184,4 +184,148 @@ export const scheduleVersionsService = {
       console.warn('Failed to call refresh_schedule_conflicts RPC:', err);
     }
   },
+
+  /**
+   * Copy an existing schedule version into a new draft version
+   */
+  async copyVersion(
+    sourceVersionId: string,
+    newTitle: string,
+    termId: string
+  ): Promise<ScheduleVersion> {
+    await assertOwnerAdmin('menyalin versi jadwal');
+    return this.createDraft(termId, newTitle, sourceVersionId);
+  },
+
+  /**
+   * Compare two versions (e.g. Version A vs Version B) and return detailed difference analysis
+   */
+  async compareVersions(
+    versionAId: string,
+    versionBId: string
+  ): Promise<{
+    versionA: ScheduleVersion | null;
+    versionB: ScheduleVersion | null;
+    addedInB: any[];
+    removedFromA: any[];
+    modified: Array<{
+      offeringId: string;
+      courseName: string;
+      courseCode?: string;
+      classCode: string;
+      entryA: any;
+      entryB: any;
+      timeChanged: boolean;
+      roomChanged: boolean;
+    }>;
+    identical: any[];
+    summary: {
+      totalInA: number;
+      totalInB: number;
+      modifiedCount: number;
+      addedCount: number;
+      removedCount: number;
+      identicalCount: number;
+    };
+  }> {
+    if (!isSupabaseConfigured()) {
+      return {
+        versionA: null,
+        versionB: null,
+        addedInB: [],
+        removedFromA: [],
+        modified: [],
+        identical: [],
+        summary: {
+          totalInA: 0,
+          totalInB: 0,
+          modifiedCount: 0,
+          addedCount: 0,
+          removedCount: 0,
+          identicalCount: 0,
+        },
+      };
+    }
+
+    try {
+      const [vA, vB, { data: entriesA }, { data: entriesB }] = await Promise.all([
+        this.getVersionById(versionAId),
+        this.getVersionById(versionBId),
+        supabase
+          .from('schedule_entries')
+          .select('*, room:room_id(id, code, name), course_offering:course_offering_id(id, class_code, course:course_id(id, name, code, effective_sks))')
+          .eq('schedule_version_id', versionAId),
+        supabase
+          .from('schedule_entries')
+          .select('*, room:room_id(id, code, name), course_offering:course_offering_id(id, class_code, course:course_id(id, name, code, effective_sks))')
+          .eq('schedule_version_id', versionBId),
+      ]);
+
+      const mapA = new Map<string, any>();
+      (entriesA || []).forEach((e: any) => mapA.set(e.course_offering_id, e));
+
+      const mapB = new Map<string, any>();
+      (entriesB || []).forEach((e: any) => mapB.set(e.course_offering_id, e));
+
+      const addedInB: any[] = [];
+      const removedFromA: any[] = [];
+      const modified: any[] = [];
+      const identical: any[] = [];
+
+      // Check items in B
+      mapB.forEach((eB, offeringId) => {
+        const eA = mapA.get(offeringId);
+        if (!eA) {
+          addedInB.push(eB);
+        } else {
+          const timeChanged =
+            Number(eA.day_of_week) !== Number(eB.day_of_week) ||
+            Number(eA.start_minute) !== Number(eB.start_minute);
+          const roomChanged = eA.room_id !== eB.room_id;
+
+          if (timeChanged || roomChanged) {
+            modified.push({
+              offeringId,
+              courseName: eB.course_offering?.course?.name || eB.course_name || 'Mata Kuliah',
+              courseCode: eB.course_offering?.course?.code || eB.course_code,
+              classCode: eB.course_offering?.class_code || eB.class_code || 'A',
+              entryA: eA,
+              entryB: eB,
+              timeChanged,
+              roomChanged,
+            });
+          } else {
+            identical.push(eB);
+          }
+        }
+      });
+
+      // Check items in A removed in B
+      mapA.forEach((eA, offeringId) => {
+        if (!mapB.has(offeringId)) {
+          removedFromA.push(eA);
+        }
+      });
+
+      return {
+        versionA: vA,
+        versionB: vB,
+        addedInB,
+        removedFromA,
+        modified,
+        identical,
+        summary: {
+          totalInA: (entriesA || []).length,
+          totalInB: (entriesB || []).length,
+          modifiedCount: modified.length,
+          addedCount: addedInB.length,
+          removedCount: removedFromA.length,
+          identicalCount: identical.length,
+        },
+      };
+    } catch (err) {
+      console.error('compareVersions error:', err);
+      throw err;
+    }
+  },
 };

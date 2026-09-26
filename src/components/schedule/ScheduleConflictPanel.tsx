@@ -16,6 +16,7 @@ interface ScheduleConflictPanelProps {
   onClose: () => void;
   conflicts: ClientConflict[];
   onSelectConflict: (conflict: ClientConflict) => void;
+  onGetSuggestion?: (conflict: ClientConflict) => void;
 }
 
 export const ScheduleConflictPanel: React.FC<ScheduleConflictPanelProps> = ({
@@ -23,6 +24,7 @@ export const ScheduleConflictPanel: React.FC<ScheduleConflictPanelProps> = ({
   onClose,
   conflicts,
   onSelectConflict,
+  onGetSuggestion,
 }) => {
   const roomConflicts = conflicts.filter((c) => c.type === 'ROOM');
   const lecturerConflicts = conflicts.filter(
@@ -99,26 +101,45 @@ export const ScheduleConflictPanel: React.FC<ScheduleConflictPanelProps> = ({
             {conflicts.map((c) => (
               <div
                 key={c.id}
-                onClick={() => {
-                  onSelectConflict(c);
-                  onClose();
-                }}
-                className="p-3 rounded-xl border border-rose-200 bg-rose-50/60 hover:bg-rose-50 transition-all cursor-pointer group flex items-start justify-between gap-3 shadow-2xs"
+                className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50/60 hover:bg-rose-50 transition-all group space-y-2 shadow-2xs"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded text-3xs font-bold uppercase bg-rose-600 text-white">
-                      {c.type}
-                    </span>
-                    <span className="text-xs font-bold text-rose-900 group-hover:text-rose-700">
-                      {c.title}
-                    </span>
+                <div
+                  onClick={() => {
+                    onSelectConflict(c);
+                    onClose();
+                  }}
+                  className="flex items-start justify-between gap-3 cursor-pointer"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded text-3xs font-bold uppercase bg-rose-600 text-white">
+                        {c.type}
+                      </span>
+                      <span className="text-xs font-bold text-rose-900 group-hover:text-rose-700">
+                        {c.title}
+                      </span>
+                    </div>
+                    <p className="text-2xs text-rose-800 leading-relaxed">
+                      {c.description}
+                    </p>
                   </div>
-                  <p className="text-2xs text-rose-800 leading-relaxed">
-                    {c.description}
-                  </p>
+                  <ChevronRight className="w-4 h-4 text-rose-400 group-hover:text-rose-600 shrink-0 mt-1 transition-transform group-hover:translate-x-0.5" />
                 </div>
-                <ChevronRight className="w-4 h-4 text-rose-400 group-hover:text-rose-600 shrink-0 mt-1 transition-transform group-hover:translate-x-0.5" />
+
+                {onGetSuggestion && (
+                  <div className="flex items-center justify-end pt-1.5 border-t border-rose-200/60">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onGetSuggestion(c);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-2xs font-bold text-rose-900 bg-white hover:bg-rose-100/80 border border-rose-300 rounded-lg transition-all shadow-2xs cursor-pointer"
+                    >
+                      <span>💡 Cari Saran Solusi Cerdas</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -22,6 +22,7 @@ interface ScheduleDetailDrawerProps {
   conflicts: ClientConflict[];
   onEdit: (entry: ScheduleEntry) => void;
   onRemove: (entry: ScheduleEntry) => void;
+  onGetSuggestion?: (entry: ScheduleEntry) => void;
 }
 
 export const ScheduleDetailDrawer: React.FC<ScheduleDetailDrawerProps> = ({
@@ -32,6 +33,7 @@ export const ScheduleDetailDrawer: React.FC<ScheduleDetailDrawerProps> = ({
   conflicts,
   onEdit,
   onRemove,
+  onGetSuggestion,
 }) => {
   if (!entry) return null;
 
@@ -100,7 +102,7 @@ export const ScheduleDetailDrawer: React.FC<ScheduleDetailDrawerProps> = ({
       <div className="space-y-4">
         {/* Conflict Alert if any */}
         {entryConflicts.length > 0 && (
-          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1.5 text-2xs text-rose-800">
+          <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-2xs text-rose-800">
             <div className="flex items-center gap-1.5 font-bold text-xs text-rose-700">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
               Perhatian: Jadwal ini mengalami bentrok
@@ -112,6 +114,19 @@ export const ScheduleDetailDrawer: React.FC<ScheduleDetailDrawerProps> = ({
                 </li>
               ))}
             </ul>
+
+            {onGetSuggestion && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onGetSuggestion(entry);
+                }}
+                className="w-full mt-1.5 py-1.5 px-3 rounded-lg text-2xs font-bold bg-white text-rose-900 border border-rose-300 hover:bg-rose-100 transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <span>💡 Cari Saran Solusi Cerdas untuk Kelas Ini</span>
+              </button>
+            )}
           </div>
         )}
 
