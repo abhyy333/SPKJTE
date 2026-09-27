@@ -15,6 +15,8 @@ import { AcademicTerm } from '../../../types';
 import {
   PackageGroup,
   PackageCourseItem,
+  KURIKULUM_2026_ALL_PACKAGES,
+  KURIKULUM_2022_ALL_PACKAGES,
 } from './PackageDefinitionConstants';
 import { curriculumPackagesService } from '../../../services/curriculumPackages.service';
 import { toast } from '../../ui/Toast';
@@ -104,9 +106,16 @@ export const Step1CourseSelection: React.FC<Step1CourseSelectionProps> = ({
           })
           .filter((g) => g.curriculum_year === curriculumYear);
 
-        setPackages(transformed);
+        if (transformed.length === 0) {
+          const fallback = curriculumYear === 2026 ? KURIKULUM_2026_ALL_PACKAGES : KURIKULUM_2022_ALL_PACKAGES;
+          setPackages(fallback);
+        } else {
+          setPackages(transformed);
+        }
       } catch (err) {
-        console.error('Error loading packages:', err);
+        console.warn('Pemberitahuan memuat paket:', err);
+        const fallback = curriculumYear === 2026 ? KURIKULUM_2026_ALL_PACKAGES : KURIKULUM_2022_ALL_PACKAGES;
+        setPackages(fallback);
       } finally {
         setLoadingPackages(false);
       }

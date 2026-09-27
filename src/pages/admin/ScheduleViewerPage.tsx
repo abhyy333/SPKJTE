@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar,
   Printer,
@@ -50,10 +50,25 @@ export const ScheduleViewerPage: React.FC = () => {
   // Inspected Card for Right Rail Inspector
   const [inspectedCard, setInspectedCard] = useState<AppleScheduleCardData | null>(null);
 
-  const handleOpenDetail = (item: CurrentPublishedSchedule) => {
+  const handleOpenDetail = useCallback((item: CurrentPublishedSchedule) => {
     setSelectedSchedule(item);
     setIsDetailDrawerOpen(true);
-  };
+  }, []);
+
+  const handleSelectEntry = useCallback((entry: AppleScheduleCardData) => {
+    setInspectedCard(entry);
+    if (entry.raw) {
+      setSelectedSchedule(entry.raw);
+    }
+  }, []);
+
+  const handleResetThisWeek = useCallback(() => {
+    setSelectedDate(new Date());
+  }, []);
+
+  const handleCloseInspector = useCallback(() => {
+    setInspectedCard(null);
+  }, []);
 
   // View Mode: 'MATRIKS' | 'TABEL'
   const [viewMode, setViewMode] = useState<'MATRIKS' | 'TABEL'>('MATRIKS');
@@ -283,13 +298,8 @@ export const ScheduleViewerPage: React.FC = () => {
               entries={calendarEntries}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
-              onSelectEntry={(entry) => {
-                setInspectedCard(entry);
-                if (entry.raw) {
-                  setSelectedSchedule(entry.raw);
-                }
-              }}
-              onResetThisWeek={() => setSelectedDate(new Date())}
+              onSelectEntry={handleSelectEntry}
+              onResetThisWeek={handleResetThisWeek}
               actions={
                 <div className="flex items-center gap-2">
                   {role === 'ADMIN' && (
@@ -401,10 +411,11 @@ export const ScheduleViewerPage: React.FC = () => {
             {/* If user toggled to Tabel View */}
             {viewMode === 'TABEL' && (
               <div
-                className="p-5 shadow-[0_8px_30px_rgba(15,23,42,0.035)] space-y-4"
+                className="p-5 shadow-[0_4px_16px_rgba(15,23,42,0.05)] space-y-4"
                 style={{
-                  background: 'rgba(255, 255, 255, 0.75)',
-                  backdropFilter: 'blur(20px) saturate(160%)',
+                  background: 'rgba(255, 255, 255, 0.85)',
+                  backdropFilter: 'blur(14px) saturate(130%)',
+                  WebkitBackdropFilter: 'blur(14px) saturate(130%)',
                   border: '1px solid rgba(255, 255, 255, 0.85)',
                   borderRadius: '24px',
                 }}
@@ -492,7 +503,7 @@ export const ScheduleViewerPage: React.FC = () => {
               onSelectDate={setSelectedDate}
               allEntries={allRailEntries}
               inspectedEntry={inspectedCard}
-              onCloseInspector={() => setInspectedCard(null)}
+              onCloseInspector={handleCloseInspector}
               onApplyReschedule={async (entry, newDay, newStartMin, newRoomId) => {
                 if (entry.raw) {
                   setSelectedSchedule(entry.raw);

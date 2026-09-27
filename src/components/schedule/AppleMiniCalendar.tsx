@@ -8,7 +8,7 @@ interface AppleMiniCalendarProps {
   scheduledDayNumbers?: number[]; // Days of the current viewed month that have scheduled events
 }
 
-export const AppleMiniCalendar: React.FC<AppleMiniCalendarProps> = ({
+export const AppleMiniCalendar: React.FC<AppleMiniCalendarProps> = React.memo(({
   selectedDate,
   onSelectDate,
   scheduledDayNumbers = [],
@@ -90,14 +90,18 @@ export const AppleMiniCalendar: React.FC<AppleMiniCalendarProps> = ({
     );
   };
 
+  const handleCellClick = (cellDate: Date) => {
+    if (!isSameDay(cellDate, selectedDate)) {
+      onSelectDate(cellDate);
+    }
+  };
+
   return (
     <div
-      className="p-5 shadow-[0_8px_30px_rgba(15,23,42,0.035)] space-y-4"
+      className="p-5 shadow-[0_4px_16px_rgba(15,23,42,0.04)] space-y-4"
       style={{
-        background: 'rgba(255, 255, 255, 0.72)',
-        backdropFilter: 'blur(20px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
-        border: '1px solid rgba(255, 255, 255, 0.85)',
+        background: 'rgba(255, 255, 255, 0.88)',
+        border: '1px solid rgba(255, 255, 255, 0.90)',
         borderRadius: '24px',
       }}
     >
@@ -150,7 +154,7 @@ export const AppleMiniCalendar: React.FC<AppleMiniCalendarProps> = ({
           return (
             <div
               key={`cal-cell-${idx}`}
-              onClick={() => onSelectDate(cell.dateObj)}
+              onClick={() => handleCellClick(cell.dateObj)}
               className="flex flex-col items-center justify-center py-1 cursor-pointer group"
             >
               <div
@@ -178,4 +182,4 @@ export const AppleMiniCalendar: React.FC<AppleMiniCalendarProps> = ({
       </div>
     </div>
   );
-};
+});

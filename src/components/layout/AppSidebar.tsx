@@ -135,11 +135,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
         style={{
-          background: 'rgba(255, 255, 255, 0.62)',
-          backdropFilter: 'blur(28px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(28px) saturate(160%)',
-          borderRight: '1px solid rgba(255, 255, 255, 0.72)',
-          boxShadow: '4px 0 24px rgba(15, 23, 42, 0.02)',
+          background: 'rgba(255, 255, 255, 0.72)',
+          backdropFilter: 'blur(16px) saturate(130%)',
+          WebkitBackdropFilter: 'blur(16px) saturate(130%)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.75)',
+          boxShadow: '4px 0 24px rgba(15, 23, 42, 0.03)',
         }}
       >
         {/* Brand Header */}

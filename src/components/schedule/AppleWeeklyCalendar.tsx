@@ -38,7 +38,7 @@ interface AppleWeeklyCalendarProps {
   filterControls?: React.ReactNode;
 }
 
-export const AppleWeeklyCalendar: React.FC<AppleWeeklyCalendarProps> = ({
+export const AppleWeeklyCalendar: React.FC<AppleWeeklyCalendarProps> = React.memo(({
   title = 'Jadwal Kuliah',
   subtitle = 'Kelola dan lihat jadwal perkuliahan Anda dengan mudah.',
   entries,
@@ -234,15 +234,32 @@ export const AppleWeeklyCalendar: React.FC<AppleWeeklyCalendarProps> = ({
     return dayLanesData.reduce((acc, d) => acc + d.laneCount, 0);
   }, [dayLanesData]);
 
+  // Mobile day selection (< md screens)
+  const activeDayNum = useMemo(() => {
+    const d = selectedDate.getDay();
+    return d >= 1 && d <= 5 ? d : 1;
+  }, [selectedDate]);
+
+  const [mobileActiveDay, setMobileActiveDay] = React.useState<number>(activeDayNum);
+
+  React.useEffect(() => {
+    setMobileActiveDay(activeDayNum);
+  }, [activeDayNum]);
+
+  const mobileDayData = useMemo(() => {
+    return dayLanesData.find((d) => d.num === mobileActiveDay) || dayLanesData[0];
+  }, [dayLanesData, mobileActiveDay]);
+
   return (
     <div
-      className="p-6 sm:p-7 shadow-[0_8px_32px_rgba(15,23,42,0.04)] space-y-6"
+      className="p-6 sm:p-7 shadow-[0_4px_16px_rgba(15,23,42,0.05)] space-y-6 calendar-containment"
       style={{
-        background: 'rgba(255, 255, 255, 0.72)',
-        backdropFilter: 'blur(24px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+        background: 'rgba(255, 255, 255, 0.75)',
+        backdropFilter: 'blur(14px) saturate(130%)',
+        WebkitBackdropFilter: 'blur(14px) saturate(130%)',
         border: '1px solid rgba(255, 255, 255, 0.85)',
         borderRadius: '28px',
+        contain: 'layout paint',
       }}
     >
       {/* Top Header Row matching Reference */}
@@ -313,8 +330,54 @@ export const AppleWeeklyCalendar: React.FC<AppleWeeklyCalendarProps> = ({
         </div>
       )}
 
-      {/* Main Weekly Calendar Grid */}
-      <div className="overflow-x-auto pb-2">
+      {/* Mobile Day Selector Bar (Visible only on < md) */}
+      <div className="flex md:hidden items-center justify-between gap-1 p-1 bg-slate-100/80 rounded-2xl">
+        {weekDays.map((d) => {
+          const isAct = d.num === mobileActiveDay;
+          return (
+            <button
+              key={`mob-day-btn-${d.num}`}
+              type="button"
+              onClick={() => {
+                setMobileActiveDay(d.num);
+                onSelectDate(d.dateObj);
+              }}
+              className={cn(
+                'flex-1 py-1.5 px-1 rounded-xl text-xs font-semibold text-center transition-all cursor-pointer select-none',
+                isAct
+                  ? 'bg-white text-blue-600 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              )}
+            >
+              <span>{d.name.slice(0, 3)}</span>{' '}
+              <span className="text-3xs text-slate-400">({d.dateObj.getDate()})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Mobile Day View: Lightweight Event Cards List (Visible only on < md) */}
+      <div className="block md:hidden">
+        {mobileDayData && mobileDayData.entriesWithLanes.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 space-y-2 bg-slate-50/50 rounded-2xl border border-slate-100">
+            <CalendarIcon className="w-6 h-6 mx-auto text-slate-300" />
+            <p className="text-xs font-medium">Tidak ada perkuliahan pada hari {mobileDayData?.name || 'ini'}.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {mobileDayData?.entriesWithLanes.map((item) => (
+              <AppleScheduleCard
+                key={`mob-card-${item.id}`}
+                data={item}
+                onClick={() => onSelectEntry && onSelectEntry(item)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop Weekly Calendar Grid (Hidden on mobile < md) */}
+      <div className="hidden md:block overflow-x-auto pb-2">
         <div
           className="min-w-[800px] grid"
           style={{
@@ -493,4 +556,4 @@ export const AppleWeeklyCalendar: React.FC<AppleWeeklyCalendarProps> = ({
       </div>
     </div>
   );
-};
+});

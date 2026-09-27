@@ -18,13 +18,29 @@ import { RoomsPage } from '../pages/admin/RoomsPage';
 import { TimeSlotsPage } from '../pages/admin/TimeSlotsPage';
 import { CourseOfferingsPage } from '../pages/admin/CourseOfferingsPage';
 import { ScheduleConflictsPage } from '../pages/admin/ScheduleConflictsPage';
-import { VersionHistoryPage } from '../pages/admin/VersionHistoryPage';
 import { ScheduleViewerPage } from '../pages/admin/ScheduleViewerPage';
 import { UnifiedSchedulingPage } from '../pages/admin/UnifiedSchedulingPage';
-import { ExamSchedulePage } from '../pages/admin/ExamSchedulePage';
-import { ReportsPage } from '../pages/admin/ReportsPage';
 import { SettingsPage } from '../pages/admin/SettingsPage';
-import { AccountManagementPage } from '../pages/admin/AccountManagementPage';
+
+// Lazy Loaded Heavy Pages for Performance
+const ExamSchedulePage = React.lazy(() =>
+  import('../pages/admin/ExamSchedulePage').then((m) => ({ default: m.ExamSchedulePage }))
+);
+const VersionHistoryPage = React.lazy(() =>
+  import('../pages/admin/VersionHistoryPage').then((m) => ({ default: m.VersionHistoryPage }))
+);
+const ReportsPage = React.lazy(() =>
+  import('../pages/admin/ReportsPage').then((m) => ({ default: m.ReportsPage }))
+);
+const AccountManagementPage = React.lazy(() =>
+  import('../pages/admin/AccountManagementPage').then((m) => ({ default: m.AccountManagementPage }))
+);
+
+const LazyFallback: React.FC = () => (
+  <div className="flex items-center justify-center min-h-[400px]">
+    <div className="w-8 h-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
+  </div>
+);
 
 // Lecturer Pages
 import { LecturerDashboard } from '../pages/lecturer/LecturerDashboard';
@@ -82,7 +98,14 @@ export const AppRoutes: React.FC = () => {
           }
         />
         <Route path="/jadwal-perkuliahan" element={<ScheduleViewerPage />} />
-        <Route path="/jadwal-ujian" element={<ExamSchedulePage />} />
+        <Route
+          path="/jadwal-ujian"
+          element={
+            <React.Suspense fallback={<LazyFallback />}>
+              <ExamSchedulePage />
+            </React.Suspense>
+          }
+        />
         <Route path="/pengaturan" element={<SettingsPage />} />
 
         {/* Account Management (Admin Only) */}
@@ -90,7 +113,9 @@ export const AppRoutes: React.FC = () => {
           path="/manajemen-akun"
           element={
             <RoleGuard allowedRoles={['ADMIN']}>
-              <AccountManagementPage />
+              <React.Suspense fallback={<LazyFallback />}>
+                <AccountManagementPage />
+              </React.Suspense>
             </RoleGuard>
           }
         />
@@ -98,7 +123,9 @@ export const AppRoutes: React.FC = () => {
           path="/pengaturan/akun"
           element={
             <RoleGuard allowedRoles={['ADMIN']}>
-              <AccountManagementPage />
+              <React.Suspense fallback={<LazyFallback />}>
+                <AccountManagementPage />
+              </React.Suspense>
             </RoleGuard>
           }
         />
@@ -172,7 +199,9 @@ export const AppRoutes: React.FC = () => {
           path="/riwayat-versi"
           element={
             <RoleGuard allowedRoles={['ADMIN']}>
-              <VersionHistoryPage />
+              <React.Suspense fallback={<LazyFallback />}>
+                <VersionHistoryPage />
+              </React.Suspense>
             </RoleGuard>
           }
         />
@@ -180,7 +209,9 @@ export const AppRoutes: React.FC = () => {
           path="/laporan"
           element={
             <RoleGuard allowedRoles={['ADMIN']}>
-              <ReportsPage />
+              <React.Suspense fallback={<LazyFallback />}>
+                <ReportsPage />
+              </React.Suspense>
             </RoleGuard>
           }
         />

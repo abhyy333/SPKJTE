@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Sparkles,
@@ -37,7 +37,7 @@ interface AppleRightRailProps {
   optimizationPanel?: React.ReactNode;
 }
 
-export const AppleRightRail: React.FC<AppleRightRailProps> = ({
+export const AppleRightRail: React.FC<AppleRightRailProps> = React.memo(({
   selectedDate,
   onSelectDate,
   allEntries,
@@ -76,21 +76,23 @@ export const AppleRightRail: React.FC<AppleRightRailProps> = ({
 
   const formattedTodayString = `${dayNames[selectedDate.getDay()]}, ${selectedDate.getDate()} ${monthNames[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`;
 
-  // Filter entries for the selected day of the week
-  const jsDay = selectedDate.getDay();
-  const targetDayNum = jsDay === 0 ? 7 : jsDay; // 1=Mon..7=Sun
+  // Filter entries for the selected day of the week memoized
+  const todayEntries = useMemo(() => {
+    const jsDay = selectedDate.getDay();
+    const targetDayNum = jsDay === 0 ? 7 : jsDay;
+    const matchDayName = dayNames[selectedDate.getDay()].toLowerCase();
 
-  const todayEntries = allEntries.filter((e) => {
-    const rawDay = e.raw?.day_of_week ?? e.raw?.day;
-    if (typeof rawDay === 'number') {
-      return rawDay === targetDayNum;
-    }
-    if (typeof rawDay === 'string') {
-      const match = dayNames[selectedDate.getDay()];
-      return rawDay.toLowerCase() === match.toLowerCase();
-    }
-    return false;
-  });
+    return allEntries.filter((e) => {
+      const rawDay = e.raw?.day_of_week ?? e.raw?.day;
+      if (typeof rawDay === 'number') {
+        return rawDay === targetDayNum;
+      }
+      if (typeof rawDay === 'string') {
+        return rawDay.toLowerCase() === matchDayName;
+      }
+      return false;
+    });
+  }, [allEntries, selectedDate]);
 
   // Calculate days of the month that have scheduled events
   const scheduledDays = [1, 2, 3, 4, 5];
@@ -199,11 +201,11 @@ export const AppleRightRail: React.FC<AppleRightRailProps> = ({
 
     return (
       <div
-        className="p-5 shadow-[0_8px_32px_rgba(15,23,42,0.04)] space-y-4 animate-in fade-in zoom-in-95 duration-150"
+        className="p-5 shadow-[0_4px_16px_rgba(15,23,42,0.05)] space-y-4 animate-in fade-in zoom-in-95 duration-150"
         style={{
-          background: 'rgba(255, 255, 255, 0.78)',
-          backdropFilter: 'blur(24px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+          background: 'rgba(255, 255, 255, 0.85)',
+          backdropFilter: 'blur(14px) saturate(130%)',
+          WebkitBackdropFilter: 'blur(14px) saturate(130%)',
           border: '1px solid rgba(255, 255, 255, 0.85)',
           borderRadius: '24px',
         }}
@@ -477,4 +479,4 @@ export const AppleRightRail: React.FC<AppleRightRailProps> = ({
       />
     </div>
   );
-};
+});

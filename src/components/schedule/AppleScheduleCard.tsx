@@ -31,8 +31,8 @@ export interface AppleScheduleCardTheme {
 export function getAppleTheme(seed: string, isConflict?: boolean): AppleScheduleCardTheme {
   if (isConflict) {
     return {
-      bg: 'rgba(255, 241, 242, 0.88)',
-      border: 'rgba(254, 205, 211, 0.80)',
+      bg: 'rgba(255, 241, 242, 0.95)',
+      border: 'rgba(254, 205, 211, 0.90)',
       accent: '#F43F5E',
       badgeBg: 'rgba(244, 63, 94, 0.15)',
       badgeText: '#BE123C',
@@ -46,8 +46,8 @@ export function getAppleTheme(seed: string, isConflict?: boolean): AppleSchedule
   const themes: AppleScheduleCardTheme[] = [
     // Blue (e.g. Sistem Kendali)
     {
-      bg: 'rgba(238, 246, 255, 0.85)',
-      border: 'rgba(191, 219, 254, 0.70)',
+      bg: 'rgba(239, 246, 255, 0.94)',
+      border: 'rgba(191, 219, 254, 0.85)',
       accent: '#3B82F6',
       badgeBg: 'rgba(59, 130, 246, 0.12)',
       badgeText: '#1D4ED8',
@@ -56,8 +56,8 @@ export function getAppleTheme(seed: string, isConflict?: boolean): AppleSchedule
     },
     // Warm Amber / Peach (e.g. Pengolahan Citra)
     {
-      bg: 'rgba(254, 247, 236, 0.88)',
-      border: 'rgba(253, 230, 138, 0.75)',
+      bg: 'rgba(254, 247, 236, 0.94)',
+      border: 'rgba(253, 230, 138, 0.85)',
       accent: '#F59E0B',
       badgeBg: 'rgba(245, 158, 11, 0.12)',
       badgeText: '#B45309',
@@ -66,8 +66,8 @@ export function getAppleTheme(seed: string, isConflict?: boolean): AppleSchedule
     },
     // Emerald / Soft Green (e.g. Antena)
     {
-      bg: 'rgba(238, 250, 243, 0.88)',
-      border: 'rgba(167, 243, 208, 0.75)',
+      bg: 'rgba(238, 250, 243, 0.94)',
+      border: 'rgba(167, 243, 208, 0.85)',
       accent: '#10B981',
       badgeBg: 'rgba(16, 185, 129, 0.12)',
       badgeText: '#047857',
@@ -76,8 +76,8 @@ export function getAppleTheme(seed: string, isConflict?: boolean): AppleSchedule
     },
     // Soft Purple / Lavender (e.g. Rekayasa Trafik)
     {
-      bg: 'rgba(245, 240, 255, 0.88)',
-      border: 'rgba(221, 214, 254, 0.75)',
+      bg: 'rgba(245, 240, 255, 0.94)',
+      border: 'rgba(221, 214, 254, 0.85)',
       accent: '#8B5CF6',
       badgeBg: 'rgba(139, 92, 246, 0.12)',
       badgeText: '#6D28D9',
@@ -97,7 +97,7 @@ interface AppleScheduleCardProps {
   showClassBadge?: boolean;
 }
 
-export const AppleScheduleCard: React.FC<AppleScheduleCardProps> = ({
+export const AppleScheduleCard: React.FC<AppleScheduleCardProps> = React.memo(({
   data,
   onClick,
   style,
@@ -121,18 +121,18 @@ export const AppleScheduleCard: React.FC<AppleScheduleCardProps> = ({
       role="button"
       tabIndex={0}
       className={cn(
-        'group relative z-10 transition-all duration-150 ease-out flex flex-col justify-between overflow-hidden cursor-pointer select-none',
+        'group relative z-10 flex flex-col justify-between overflow-hidden cursor-pointer select-none',
         'hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99]',
         className
       )}
       style={{
         background: theme.bg,
-        backdropFilter: 'blur(16px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(16px) saturate(160%)',
         border: `1px solid ${theme.border}`,
-        boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8)',
+        boxShadow: '0 4px 16px rgba(15, 23, 42, 0.05)',
         borderRadius: '14px',
         padding: '9px 11px',
+        contain: 'paint',
+        transition: 'transform 120ms ease, box-shadow 120ms ease',
         ...style,
       }}
     >
@@ -221,4 +221,4 @@ export const AppleScheduleCard: React.FC<AppleScheduleCardProps> = ({
       </div>
     </div>
   );
-};
+});

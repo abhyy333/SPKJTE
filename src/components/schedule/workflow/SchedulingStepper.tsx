@@ -63,7 +63,7 @@ interface SchedulingStepperProps {
   onStepClick?: (stepNumber: number) => void;
 }
 
-export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
+export const SchedulingStepper: React.FC<SchedulingStepperProps> = React.memo(({
   currentStep = 1,
   onStepClick,
 }) => {
@@ -80,11 +80,11 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
 
   return (
     <div
-      className="w-full p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.03)]"
+      className="w-full p-2.5 shadow-[0_4px_16px_rgba(15,23,42,0.03)]"
       style={{
-        background: 'rgba(255, 255, 255, 0.72)',
-        backdropFilter: 'blur(20px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
+        background: 'rgba(255, 255, 255, 0.82)',
+        backdropFilter: 'blur(12px) saturate(130%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(130%)',
         border: '1px solid rgba(255, 255, 255, 0.85)',
         borderRadius: '20px',
       }}
@@ -168,4 +168,4 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
       </div>
     </div>
   );
-};
+});

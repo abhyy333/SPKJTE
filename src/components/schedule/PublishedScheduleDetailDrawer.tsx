@@ -633,9 +633,9 @@ export const PublishedScheduleDetailDrawer: React.FC<PublishedScheduleDetailDraw
       />
 
       {/* Right Drawer (Design System Compliant) */}
-      <div className="fixed inset-y-0 right-0 z-50 w-full sm:max-w-[460px] lg:max-w-[480px] bg-white/90 backdrop-blur-2xl border-l border-slate-200/80 shadow-2xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-200">
+      <div className="fixed inset-y-0 right-0 z-50 w-full sm:max-w-[460px] lg:max-w-[480px] bg-white/95 backdrop-blur-md border-l border-slate-200/80 shadow-xl flex flex-col justify-between overflow-hidden animate-in slide-in-from-right duration-150">
         {/* Drawer Header */}
-        <div className="p-5 sm:p-6 border-b border-slate-200/70 bg-white/70 backdrop-blur-md">
+        <div className="p-5 sm:p-6 border-b border-slate-200/70 bg-white/90">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -1092,7 +1092,7 @@ export const PublishedScheduleDetailDrawer: React.FC<PublishedScheduleDetailDraw
         </div>
 
         {/* Drawer Footer */}
-        <div className="p-4 sm:p-5 border-t border-slate-200/70 bg-white/80 backdrop-blur-md flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-t border-slate-200/70 bg-white/95 flex items-center justify-between">
           <button
             type="button"
             onClick={onClose}

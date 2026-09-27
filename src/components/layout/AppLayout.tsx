@@ -21,9 +21,8 @@ export const AppLayout: React.FC = () => {
     <div className="min-h-screen bg-transparent flex flex-col text-slate-800 relative">
       {/* Subtle Ambient Background Highlight for Translucent Glass Interface */}
       <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden select-none">
-        <div className="absolute top-[-5%] left-[20%] w-[650px] h-[650px] bg-blue-100/35 rounded-full blur-3xl" />
-        <div className="absolute top-[35%] right-[-5%] w-[550px] h-[550px] bg-indigo-100/25 rounded-full blur-3xl" />
-        <div className="absolute bottom-[-10%] left-[35%] w-[600px] h-[600px] bg-sky-100/25 rounded-full blur-3xl" />
+        <div className="absolute top-[-10%] left-[15%] w-[500px] h-[500px] bg-blue-100/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-[-10%] right-[10%] w-[450px] h-[450px] bg-sky-100/15 rounded-full blur-3xl" />
       </div>
 
       {/* Sidebar */}

@@ -9,7 +9,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { curriculumPackagesService } from '../../services/curriculumPackages.service';
+import { curriculumPackagesService, getDefaultCurriculumPackages } from '../../services/curriculumPackages.service';
 import { schedulingRombelService } from '../../services/schedulingRombel.service';
 import {
   schedulingLecturersService,
@@ -346,8 +346,8 @@ export const UnifiedSchedulingPage: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.error('Full Supabase Error loading curriculum_packages:', err);
-      setError('Gagal memuat paket kurikulum.');
+      console.warn('Pemberitahuan inisialisasi data paket kurikulum:', err?.message || err);
+      setPackages((prev) => (prev && prev.length > 0 ? prev : getDefaultCurriculumPackages()));
     } finally {
       setLoading(false);
     }

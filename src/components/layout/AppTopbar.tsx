@@ -111,11 +111,11 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
       <header
         className="h-16 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 min-w-0"
         style={{
-          background: 'rgba(255, 255, 255, 0.68)',
-          backdropFilter: 'blur(24px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.72)',
-          boxShadow: '0 2px 16px rgba(15, 23, 42, 0.02)',
+          background: 'rgba(255, 255, 255, 0.75)',
+          backdropFilter: 'blur(14px) saturate(130%)',
+          WebkitBackdropFilter: 'blur(14px) saturate(130%)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.75)',
+          boxShadow: '0 2px 16px rgba(15, 23, 42, 0.03)',
         }}
       >
         {/* Mobile menu trigger */}
