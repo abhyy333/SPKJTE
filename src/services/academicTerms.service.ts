@@ -3,6 +3,40 @@ import { AcademicTerm } from '../types';
 import { parseSupabaseError } from '../lib/utils';
 import { verifyOwnerAdmin, assertOwnerAdmin } from '../lib/authGuard';
 
+export async function getActiveAcademicTerm(): Promise<AcademicTerm | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const { data, error } = await supabase.rpc('get_active_academic_term');
+
+    if (error) {
+      console.error('get_active_academic_term failed', error);
+      throw error;
+    }
+
+    console.log('active academic term RPC', data);
+
+    if (!data || data.length === 0) {
+      return null;
+    }
+
+    const row = data[0];
+    return {
+      id: row.id,
+      academic_year: row.academic_year || row.year || '2026/2027',
+      semester_type: row.semester_type || row.term || 'GANJIL',
+      is_active: row.is_active ?? true,
+      starts_on: row.starts_on || null,
+      ends_on: row.ends_on || null,
+      year: row.academic_year || row.year || '2026/2027',
+      term: row.semester_type || row.term || 'GANJIL',
+    };
+  } catch (err) {
+    console.error('get_active_academic_term failed', err);
+    throw err;
+  }
+}
+
 export const academicTermsService = {
   async getAcademicTerms(): Promise<AcademicTerm[]> {
     if (!isSupabaseConfigured()) return [];
@@ -24,7 +58,7 @@ export const academicTermsService = {
 
       return (data || []).map((row: any) => ({
         ...row,
-        academic_year: row.academic_year || row.year || '2024/2025',
+        academic_year: row.academic_year || row.year || '2026/2027',
         semester_type: row.semester_type || row.term || 'GANJIL',
         starts_on: row.starts_on || row.start_date,
         ends_on: row.ends_on || row.end_date,
@@ -37,31 +71,8 @@ export const academicTermsService = {
   },
 
   async getActiveTerm(): Promise<AcademicTerm | null> {
-    if (!isSupabaseConfigured()) return null;
-
     try {
-      const isOwner = await verifyOwnerAdmin();
-      const table = isOwner ? 'academic_terms' : 'guest_academic_terms';
-
-      const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error || !data) return null;
-
-      return {
-        ...data,
-        academic_year: data.academic_year || data.year || '2024/2025',
-        semester_type: data.semester_type || data.term || 'GANJIL',
-        starts_on: data.starts_on || data.start_date,
-        ends_on: data.ends_on || data.end_date,
-        year: data.academic_year || data.year,
-        term: data.semester_type || data.term,
-      };
+      return await getActiveAcademicTerm();
     } catch {
       return null;
     }

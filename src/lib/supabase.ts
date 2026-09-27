@@ -5,8 +5,9 @@ const STORAGE_URL_KEY = 'spk_supabase_url';
 const STORAGE_KEY_KEY = 'spk_supabase_key';
 
 export function getSupabaseConfig(): { url: string; key: string } {
-  const envUrl = (import.meta.env.VITE_SUPABASE_URL as string) || '';
-  const envKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) || (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
+  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+  const envUrl = (metaEnv?.VITE_SUPABASE_URL as string) || (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL : '') || '';
+  const envKey = (metaEnv?.VITE_SUPABASE_PUBLISHABLE_KEY as string) || (metaEnv?.VITE_SUPABASE_ANON_KEY as string) || (typeof process !== 'undefined' ? (process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY) : '') || '';
 
   const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) || '' : '';
   const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_KEY) || '' : '';
@@ -36,7 +37,14 @@ export function clearRuntimeSupabaseConfig() {
 
 export function isSupabaseConfigured(): boolean {
   const { url, key } = getSupabaseConfig();
-  return Boolean(url && key && url.startsWith('http'));
+  return Boolean(
+    url &&
+    key &&
+    url.startsWith('http') &&
+    !url.includes('placeholder-project') &&
+    !key.includes('placeholder-anon-key') &&
+    !key.includes('placeholder')
+  );
 }
 
 const { url, key } = getSupabaseConfig();

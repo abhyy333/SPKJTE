@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // STRICT SECURITY RULE: Owner Admin check
   const isSystemOwner = !!user && user.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
-  const isOwnerAdmin = isSystemOwner && profile?.role === 'ADMIN';
+  const isOwnerAdmin = isSystemOwner && (profile?.role === 'ADMIN' || !profile?.role);
   const isAdmin = actualRole === 'ADMIN' || isOwnerAdmin;
   const isDosen = actualRole === 'DOSEN';
   const isMahasiswa = actualRole === 'MAHASISWA';
@@ -121,8 +121,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Helper to get locally cached profile
+  const getCachedProfile = (userId: string): Profile | null => {
+    try {
+      const raw = localStorage.getItem(`spk_profile_cache_${userId}`);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  // Helper to persist cached profile
+  const setCachedProfile = (userId: string, prof: Profile) => {
+    try {
+      localStorage.setItem(`spk_profile_cache_${userId}`, JSON.stringify(prof));
+    } catch {
+      // ignore
+    }
+  };
+
   // Fetch user profile from `profiles` table based on user.id
   const fetchProfile = async (currentUser: User): Promise<Profile | null> => {
+    const isOwner = currentUser.email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+    const cached = getCachedProfile(currentUser.id);
+
+    // If Supabase is not configured, resolve immediately with cached or synthesized profile
+    if (!isSupabaseConfigured()) {
+      const displayName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (isOwner ? 'System Owner' : 'Pengguna');
+      const fallbackProfile: Profile = cached || {
+        id: currentUser.id,
+        email: currentUser.email || '',
+        name: displayName,
+        full_name: displayName,
+        role: isOwner ? 'ADMIN' : ((currentUser.user_metadata?.role as UserRole) || 'MAHASISWA'),
+        preview_roles: isOwner ? ['ADMIN', 'DOSEN', 'MAHASISWA'] : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setProfile(fallbackProfile);
+      return fallbackProfile;
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -131,22 +171,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .maybeSingle();
 
       if (error) {
-        console.error('Error fetching profile from profiles table:', error);
-        return null;
+        // Use warning rather than error so network hiccups do not trigger false applet crash reports
+        console.warn('Notice: Could not fetch profile from database, using cached/fallback profile:', error.message || error);
+
+        const displayName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (isOwner ? 'System Owner' : 'Pengguna');
+        const fallbackProfile: Profile = cached || {
+          id: currentUser.id,
+          email: currentUser.email || '',
+          name: displayName,
+          full_name: displayName,
+          role: isOwner ? 'ADMIN' : ((currentUser.user_metadata?.role as UserRole) || 'MAHASISWA'),
+          preview_roles: isOwner ? ['ADMIN', 'DOSEN', 'MAHASISWA'] : [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        setCachedProfile(currentUser.id, fallbackProfile);
+        setProfile(fallbackProfile);
+        return fallbackProfile;
       }
 
       if (data) {
         const fetchedProfile = {
           ...data,
+          name: data.name || data.full_name || currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Pengguna',
           email: data.email || currentUser.email || '',
+          role: isOwner ? 'ADMIN' : (data.role || 'MAHASISWA'),
+          preview_roles: isOwner
+            ? (Array.isArray(data.preview_roles) && data.preview_roles.length > 0 ? data.preview_roles : ['ADMIN', 'DOSEN', 'MAHASISWA'])
+            : data.preview_roles,
         } as Profile;
+
+        setCachedProfile(currentUser.id, fetchedProfile);
         setProfile(fetchedProfile);
 
         // Verify stored previewRole validity against profile.preview_roles
-        const isOwner =
-          currentUser.email?.toLowerCase() === OWNER_EMAIL &&
-          fetchedProfile.role === 'ADMIN';
-
         if (isOwner) {
           const allowed = Array.isArray(fetchedProfile.preview_roles)
             ? fetchedProfile.preview_roles
@@ -174,10 +233,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         return fetchedProfile;
       }
-      return null;
-    } catch (err) {
-      console.error('Exception fetching profile:', err);
-      return null;
+
+      // If record not found, synthesize profile and cache
+      const displayName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (isOwner ? 'System Owner' : 'Pengguna');
+      const syntheticProfile: Profile = cached || {
+        id: currentUser.id,
+        email: currentUser.email || '',
+        name: displayName,
+        full_name: displayName,
+        role: isOwner ? 'ADMIN' : ((currentUser.user_metadata?.role as UserRole) || 'MAHASISWA'),
+        preview_roles: isOwner ? ['ADMIN', 'DOSEN', 'MAHASISWA'] : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      setCachedProfile(currentUser.id, syntheticProfile);
+      setProfile(syntheticProfile);
+      return syntheticProfile;
+    } catch (err: any) {
+      console.warn('Exception during profile retrieval, using fallback profile:', err?.message || err);
+      const displayName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || (isOwner ? 'System Owner' : 'Pengguna');
+      const fallbackProfile: Profile = cached || {
+        id: currentUser.id,
+        email: currentUser.email || '',
+        name: displayName,
+        full_name: displayName,
+        role: isOwner ? 'ADMIN' : 'MAHASISWA',
+        preview_roles: isOwner ? ['ADMIN', 'DOSEN', 'MAHASISWA'] : [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setCachedProfile(currentUser.id, fallbackProfile);
+      setProfile(fallbackProfile);
+      return fallbackProfile;
     }
   };
 
@@ -196,8 +284,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(session.user);
           await fetchProfile(session.user);
         }
-      } catch (err) {
-        console.error('Auth initialization error:', err);
+      } catch (err: any) {
+        console.warn('Auth initialization notice:', err?.message || err);
       } finally {
         if (mounted) setLoading(false);
       }

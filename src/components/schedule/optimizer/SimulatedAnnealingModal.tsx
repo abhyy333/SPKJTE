@@ -22,6 +22,7 @@ import {
   SimulatedAnnealingEngine,
 } from '../../../lib/optimizer/simulatedAnnealing';
 import { DEFAULT_WEIGHTS } from '../../../lib/optimizer/costFunction';
+import { optimizerService } from '../../../services/optimizer.service';
 import { SAPreValidationTab } from './SAPreValidationTab';
 import { SAConfigTab } from './SAConfigTab';
 import { SARunnerTab } from './SARunnerTab';
@@ -141,6 +142,13 @@ export const SimulatedAnnealingModal: React.FC<SimulatedAnnealingModalProps> = (
       setResult(res);
       setIsRunning(false);
       setIsPaused(false);
+
+      // Record to optimization_runs in Supabase
+      if (term?.id && currentVersionId) {
+        optimizerService.recordRun(term.id, currentVersionId, res, config).catch((err) => {
+          console.warn('Could not record optimization run:', err);
+        });
+      }
 
       if (res.success) {
         toast.success('Simulated Annealing selesai! Solusi bebas dari seluruh hard conflict.');

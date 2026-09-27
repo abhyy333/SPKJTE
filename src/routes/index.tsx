@@ -20,6 +20,7 @@ import { CourseOfferingsPage } from '../pages/admin/CourseOfferingsPage';
 import { ScheduleConflictsPage } from '../pages/admin/ScheduleConflictsPage';
 import { VersionHistoryPage } from '../pages/admin/VersionHistoryPage';
 import { ScheduleViewerPage } from '../pages/admin/ScheduleViewerPage';
+import { UnifiedSchedulingPage } from '../pages/admin/UnifiedSchedulingPage';
 import { ExamSchedulePage } from '../pages/admin/ExamSchedulePage';
 import { ReportsPage } from '../pages/admin/ReportsPage';
 import { SettingsPage } from '../pages/admin/SettingsPage';
@@ -72,6 +73,14 @@ export const AppRoutes: React.FC = () => {
         }
       >
         {/* Shared Routes */}
+        <Route
+          path="/penyusunan-jadwal"
+          element={
+            <RoleGuard allowedRoles={['ADMIN']} allowGuest={true}>
+              <UnifiedSchedulingPage />
+            </RoleGuard>
+          }
+        />
         <Route path="/jadwal-perkuliahan" element={<ScheduleViewerPage />} />
         <Route path="/jadwal-ujian" element={<ExamSchedulePage />} />
         <Route path="/pengaturan" element={<SettingsPage />} />

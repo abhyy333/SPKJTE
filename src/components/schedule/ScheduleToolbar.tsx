@@ -103,9 +103,9 @@ export const ScheduleToolbar: React.FC<ScheduleToolbarProps> = ({
             </div>
           )}
 
-          {/* Status & Revision Badges */}
+          {/* Status, Version, & Revision Badges */}
           {selectedVersion && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <span
                 className={`px-2.5 py-1 rounded-full text-2xs font-bold ${
                   selectedVersion.status === 'PUBLISHED'
@@ -113,16 +113,20 @@ export const ScheduleToolbar: React.FC<ScheduleToolbarProps> = ({
                     : 'bg-blue-50 text-blue-700 border border-blue-200'
                 }`}
               >
-                {selectedVersion.status || 'DRAFT'}
+                Status {selectedVersion.status || 'DRAFT'}
+              </span>
+
+              <span className="px-2 py-0.5 rounded-full text-2xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Versi {selectedVersion.version_number || '1'}
               </span>
 
               <span className="px-2 py-0.5 rounded-full text-2xs font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                Rev. {revision}
+                Revision {revision}
               </span>
 
               {hasUnsavedChanges && (
-                <span className="px-2 py-0.5 rounded-full text-2xs font-bold bg-amber-100 text-amber-800 animate-pulse">
-                  Perubahan Belum Disimpan
+                <span className="px-2.5 py-0.5 rounded-full text-2xs font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                  Belum Disimpan
                 </span>
               )}
             </div>

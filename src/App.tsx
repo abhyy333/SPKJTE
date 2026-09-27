@@ -5,6 +5,7 @@
 import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { AcademicTermProvider } from './contexts/AcademicTermContext';
 import { ToastProvider } from './components/ui/Toast';
 import { AppRoutes } from './routes';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
@@ -15,7 +16,9 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter>
           <AuthProvider>
-            <AppRoutes />
+            <AcademicTermProvider>
+              <AppRoutes />
+            </AcademicTermProvider>
           </AuthProvider>
         </BrowserRouter>
       </ToastProvider>

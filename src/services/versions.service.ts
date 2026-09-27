@@ -12,7 +12,7 @@ export const versionsService = {
         .from('schedule_versions')
         .select(`
           *,
-          academic_term:term_id ( id, year, term )
+          academic_term:academic_term_id ( id, academic_year, semester_type, year, term )
         `)
         .order('created_at', { ascending: false });
 

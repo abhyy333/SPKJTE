@@ -35,17 +35,19 @@ import { lecturersService } from '../../services/lecturers.service';
 import { roomsService } from '../../services/rooms.service';
 import { academicTermsService } from '../../services/academicTerms.service';
 import { classAssignmentsService } from '../../services/classAssignments.service';
+import { useAcademicTerm } from '../../contexts/AcademicTermContext';
 import { CourseOffering, Course, Lecturer, AcademicTerm, ClassAssignment } from '../../types';
 
 export const CourseOfferingsPage: React.FC = () => {
   const toast = useToast();
+  const { activeTerm: globalActiveTerm, terms: globalTerms } = useAcademicTerm();
 
   const [offerings, setOfferings] = useState<CourseOffering[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
   const [roomTypes, setRoomTypes] = useState<string[]>([]);
-  const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>([]);
-  const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(null);
+  const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>(globalTerms || []);
+  const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(globalActiveTerm);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

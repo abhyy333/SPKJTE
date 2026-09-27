@@ -281,11 +281,11 @@ export const courseOfferingsService = {
     // Fetch course for effective_sks
     const { data: courseData } = await supabase
       .from('courses')
-      .select('effective_sks, sks')
+      .select('effective_sks')
       .eq('id', data.course_id)
       .single();
 
-    const effSks = courseData?.effective_sks ?? courseData?.sks ?? 3;
+    const effSks = courseData?.effective_sks ?? 3;
 
     const payload: Record<string, any> = {
       course_id: data.course_id,

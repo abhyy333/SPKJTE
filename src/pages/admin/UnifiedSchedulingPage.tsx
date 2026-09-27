@@ -1,0 +1,1910 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  AlertTriangle,
+  RotateCcw,
+  RefreshCw,
+  Layers,
+  Sparkles,
+  BookOpen,
+} from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { curriculumPackagesService } from '../../services/curriculumPackages.service';
+import { schedulingRombelService } from '../../services/schedulingRombel.service';
+import {
+  schedulingLecturersService,
+  Step3DataResult,
+} from '../../services/schedulingLecturers.service';
+import {
+  CurriculumPackage,
+  CurriculumPackageCourse,
+  PlannedCourse,
+  AcademicTerm,
+  CourseRombelGroup,
+  RombelOfferingDraft,
+  Room,
+  TimeSlot,
+  LecturerAvailability,
+  ScheduleVersion,
+} from '../../types';
+import { scheduleVersionsService } from '../../services/scheduleVersions.service';
+import { scheduleConflictsService } from '../../services/scheduleConflicts.service';
+import { supabase } from '../../lib/supabase';
+import { SchedulingStepper } from '../../components/schedule/workflow/SchedulingStepper';
+import { SchedulingActiveHeader } from '../../components/schedule/workflow/SchedulingActiveHeader';
+import { SchedulingEmptyState } from '../../components/schedule/workflow/SchedulingEmptyState';
+import { SchedulingTemplateView } from '../../components/schedule/workflow/SchedulingTemplateView';
+import { SchedulingStickyBar } from '../../components/schedule/workflow/SchedulingStickyBar';
+import { SchedulingRombelView } from '../../components/schedule/workflow/SchedulingRombelView';
+import { SchedulingLecturersView } from '../../components/schedule/workflow/SchedulingLecturersView';
+import { SchedulingInitialScheduleView } from '../../components/schedule/workflow/SchedulingInitialScheduleView';
+import { SchedulingSimulatedAnnealingView } from '../../components/schedule/workflow/SchedulingSimulatedAnnealingView';
+import { SchedulingPreviewPublishView } from '../../components/schedule/workflow/SchedulingPreviewPublishView';
+import {
+  schedulingInitialService,
+  InitialScheduleEntry,
+  InitialScheduleConflict,
+  InitialScheduleStats,
+  InitialScheduleOffering,
+} from '../../services/schedulingInitial.service';
+import { schedulingOptimizationService } from '../../services/schedulingOptimization.service';
+import {
+  distributeParticipantsWithRoomCapacity,
+  calculateTargetRoomCapacity,
+  isPracticum,
+  isKKN,
+} from '../../lib/distributionUtils';
+import { toast } from '../../components/ui/Toast';
+
+export const UnifiedSchedulingPage: React.FC = () => {
+  const { user } = useAuth();
+
+  // 1. Data loading states
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [packages, setPackages] = useState<CurriculumPackage[]>([]);
+  const [categoryMap, setCategoryMap] = useState<Map<string, string>>(new Map());
+  const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(null);
+
+  // 2. Workflow & Step State
+  const [activeStep, setActiveStep] = useState<number>(1);
+  const [scheduleCreationMode, setScheduleCreationMode] = useState<'TEMPLATE' | 'MANUAL' | null>(null);
+
+  // 3. Step 1 Filter & Selection State
+  const [selectedSemesterType, setSelectedSemesterType] = useState<'GANJIL' | 'GENAP'>('GANJIL');
+  const [selectedSemesterFilter, setSelectedSemesterFilter] = useState<number | 'ALL'>('ALL');
+  const [activeCurricula, setActiveCurricula] = useState<number[]>([2026, 2022]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // 4. Step 1 Selections & Participant Map
+  const [plannedCourses, setPlannedCourses] = useState<PlannedCourse[]>([]);
+  const [participantInputMap, setParticipantInputMap] = useState<Record<string, number>>({});
+
+  // 5. Step 2 Rombel State
+  const [rombelGroups, setRombelGroups] = useState<CourseRombelGroup[]>([]);
+  const [loadingRombel, setLoadingRombel] = useState<boolean>(false);
+  const [savingRombel, setSavingRombel] = useState<boolean>(false);
+  const [hasUnsavedRombelChanges, setHasUnsavedRombelChanges] = useState<boolean>(false);
+
+  // 6. Step 3 Lecturers State
+  const [step3Data, setStep3Data] = useState<Step3DataResult | null>(null);
+  const [loadingStep3, setLoadingStep3] = useState<boolean>(false);
+  const [syncingStep3, setSyncingStep3] = useState<boolean>(false);
+
+  // 7. Step 4 Initial Schedule State
+  const [loadingStep4, setLoadingStep4] = useState<boolean>(false);
+  const [generatingStep4, setGeneratingStep4] = useState<boolean>(false);
+  const [savingStep4, setSavingStep4] = useState<boolean>(false);
+  const [step4Entries, setStep4Entries] = useState<InitialScheduleEntry[]>([]);
+  const [step4Conflicts, setStep4Conflicts] = useState<InitialScheduleConflict[]>([]);
+  const [step4Stats, setStep4Stats] = useState<InitialScheduleStats>({
+    totalOfferings: 0,
+    scheduledCount: 0,
+    unscheduledCount: 0,
+    roomsUsedCount: 0,
+    totalSks: 0,
+    totalConflicts: 0,
+    roomConflictCount: 0,
+    lecturerConflictCount: 0,
+    capacityViolationCount: 0,
+    availabilityConflictCount: 0,
+    averageSeatWaste: 0,
+  });
+  const [step4Rooms, setStep4Rooms] = useState<Room[]>([]);
+  const [step4Offerings, setStep4Offerings] = useState<InitialScheduleOffering[]>([]);
+  const [step4TimeSlots, setStep4TimeSlots] = useState<TimeSlot[]>([]);
+  const [step4Availabilities, setStep4Availabilities] = useState<LecturerAvailability[]>([]);
+
+  // 8. Single Unified DRAFT Schedule Version (Workflow Step 2 -> 4 -> 5 -> 6 source of truth)
+  const [currentVersion, setCurrentVersion] = useState<ScheduleVersion | null>(null);
+
+  // 9. Step 5 Simulated Annealing State
+  const [savingStep5, setSavingStep5] = useState<boolean>(false);
+  const [optimizationMeta, setOptimizationMeta] = useState<any>(null);
+
+  // Scoped localStorage storage keys
+  const step1StorageKey = useMemo(() => {
+    const userId = user?.id || 'anonymous';
+    const termId = activeTerm?.id || 'active';
+    return `spk:scheduling-step1:${userId}:${termId}`;
+  }, [user?.id, activeTerm?.id]);
+
+  const step2StorageKey = useMemo(() => {
+    const userId = user?.id || 'anonymous';
+    const termId = activeTerm?.id || 'active';
+    return `spk:scheduling-step2:${userId}:${termId}`;
+  }, [user?.id, activeTerm?.id]);
+
+  const step4StorageKey = useMemo(() => {
+    const userId = user?.id || 'anonymous';
+    const termId = activeTerm?.id || 'active';
+    return `spk:scheduling-step4:${userId}:${termId}`;
+  }, [user?.id, activeTerm?.id]);
+
+  const activeVersionStorageKey = useMemo(() => {
+    const userId = user?.id || 'anonymous';
+    const termId = activeTerm?.id || 'active';
+    return `spk:active-schedule-version:${userId}:${termId}`;
+  }, [user?.id, activeTerm?.id]);
+
+  // Helper: Guarantees a single DRAFT version across Step 1-6 and browser refreshes
+  const ensureCurrentDraftVersion = useCallback(async (): Promise<ScheduleVersion> => {
+    const termId = activeTerm?.id;
+    if (!termId) throw new Error('Periode akademik aktif tidak ditemukan.');
+
+    // 1. Check localStorage for activeScheduleVersionId first
+    if (activeVersionStorageKey) {
+      const savedId = localStorage.getItem(activeVersionStorageKey);
+      if (savedId) {
+        try {
+          const fresh = await scheduleVersionsService.getVersionById(savedId);
+          if (fresh && fresh.status === 'DRAFT') {
+            setCurrentVersion(fresh);
+            return fresh;
+          }
+        } catch (e) {
+          console.warn('Saved active version lookup warning:', e);
+        }
+      }
+    }
+
+    // 2. Check in-memory currentVersion state
+    if (currentVersion && currentVersion.status === 'DRAFT') {
+      try {
+        const fresh = await scheduleVersionsService.getVersionById(currentVersion.id);
+        if (fresh && fresh.status === 'DRAFT') {
+          setCurrentVersion(fresh);
+          if (activeVersionStorageKey) {
+            localStorage.setItem(activeVersionStorageKey, fresh.id);
+          }
+          return fresh;
+        }
+      } catch (err) {
+        console.warn('Error refreshing current draft version:', err);
+      }
+      if (activeVersionStorageKey) {
+        localStorage.setItem(activeVersionStorageKey, currentVersion.id);
+      }
+      return currentVersion;
+    }
+
+    // 3. Query database for existing DRAFT
+    const versions = await scheduleVersionsService.getVersions(termId);
+    const existingDraft = versions.find((v) => v.status === 'DRAFT');
+    if (existingDraft) {
+      setCurrentVersion(existingDraft);
+      if (activeVersionStorageKey) {
+        localStorage.setItem(activeVersionStorageKey, existingDraft.id);
+      }
+      return existingDraft;
+    }
+
+    // 4. ONLY create draft if no existing draft found in DB or localStorage
+    const title = `Jadwal Perkuliahan - ${activeTerm?.academic_year || '2026/2027'} ${activeTerm?.semester_type || selectedSemesterType}`;
+    const newDraft = await scheduleVersionsService.createDraft(termId, title);
+    setCurrentVersion(newDraft);
+    if (activeVersionStorageKey) {
+      localStorage.setItem(activeVersionStorageKey, newDraft.id);
+    }
+    return newDraft;
+  }, [currentVersion, activeTerm?.id, activeTerm?.academic_year, activeTerm?.semester_type, selectedSemesterType, activeVersionStorageKey]);
+
+  // Load active term & packages
+  const loadInitialData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [termData, pkgsData, catMap] = await Promise.all([
+        curriculumPackagesService.getActiveAcademicTerm(),
+        curriculumPackagesService.getPackages(),
+        curriculumPackagesService.getMasterCourseCategoryMap(),
+      ]);
+
+      setActiveTerm(termData);
+      if (termData?.semester_type) {
+        setSelectedSemesterType(termData.semester_type === 'GENAP' ? 'GENAP' : 'GANJIL');
+      }
+
+      setPackages(pkgsData);
+      setCategoryMap(catMap);
+
+      // Check existing DRAFT schedule version for active term via localStorage key first
+      if (termData?.id) {
+        const key = `spk:active-schedule-version:${user?.id || 'anonymous'}:${termData.id}`;
+        const savedId = localStorage.getItem(key);
+        let draft: ScheduleVersion | null = null;
+        if (savedId) {
+          try {
+            draft = await scheduleVersionsService.getVersionById(savedId);
+            if (draft && draft.status !== 'DRAFT') draft = null;
+          } catch (e) {}
+        }
+
+        if (!draft) {
+          try {
+            const versions = await scheduleVersionsService.getVersions(termData.id);
+            draft = versions.find((v) => v.status === 'DRAFT') || null;
+            if (draft) {
+              localStorage.setItem(key, draft.id);
+            }
+          } catch (vErr) {
+            console.warn('Could not query draft versions on init:', vErr);
+          }
+        }
+
+        if (draft) {
+          setCurrentVersion(draft);
+        }
+      }
+    } catch (err: any) {
+      console.error('Full Supabase Error loading curriculum_packages:', err);
+      setError('Gagal memuat paket kurikulum.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadInitialData();
+  }, [loadInitialData]);
+
+  // Restore Step 1 draft state from localStorage once data is loaded
+  useEffect(() => {
+    if (loading || !step1StorageKey) return;
+
+    try {
+      const savedRaw = localStorage.getItem(step1StorageKey);
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        if (parsed.activeStep && (parsed.activeStep >= 1 && parsed.activeStep <= 6)) {
+          setActiveStep(parsed.activeStep);
+        }
+        if (parsed.scheduleCreationMode) {
+          setScheduleCreationMode(parsed.scheduleCreationMode);
+        }
+        if (parsed.selectedSemesterType) {
+          setSelectedSemesterType(parsed.selectedSemesterType);
+        }
+        if (parsed.selectedSemesterFilter !== undefined) {
+          setSelectedSemesterFilter(parsed.selectedSemesterFilter);
+        }
+        if (Array.isArray(parsed.activeCurricula) && parsed.activeCurricula.length > 0) {
+          setActiveCurricula(parsed.activeCurricula);
+        }
+        if (Array.isArray(parsed.plannedCourses)) {
+          setPlannedCourses(parsed.plannedCourses);
+        }
+        if (parsed.participantInputMap && typeof parsed.participantInputMap === 'object') {
+          setParticipantInputMap(parsed.participantInputMap);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse scheduling draft from localStorage:', e);
+    }
+  }, [loading, step1StorageKey]);
+
+  // Auto-persist Step 1 draft state to localStorage on changes
+  useEffect(() => {
+    if (loading || !step1StorageKey || !scheduleCreationMode) return;
+
+    try {
+      const payload = {
+        activeStep,
+        scheduleCreationMode,
+        selectedSemesterType,
+        selectedSemesterFilter,
+        activeCurricula,
+        plannedCourses,
+        participantInputMap,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(step1StorageKey, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('Failed to persist Step 1 draft to localStorage:', e);
+    }
+  }, [
+    loading,
+    step1StorageKey,
+    activeStep,
+    scheduleCreationMode,
+    selectedSemesterType,
+    selectedSemesterFilter,
+    activeCurricula,
+    plannedCourses,
+    participantInputMap,
+  ]);
+
+  // Auto-persist Step 2 draft state to localStorage on rombel changes
+  useEffect(() => {
+    if (loading || !step2StorageKey || rombelGroups.length === 0) return;
+
+    try {
+      const draftMap: Record<string, RombelOfferingDraft> = {};
+      rombelGroups.forEach((group) => {
+        group.offerings.forEach((off) => {
+          draftMap[off.id] = {
+            active: off.active,
+            expectedStudents: off.currentParticipants,
+            targetRoomCapacity: off.targetRoomCapacity,
+          };
+        });
+      });
+
+      localStorage.setItem(step2StorageKey, JSON.stringify(draftMap));
+    } catch (e) {
+      console.warn('Failed to persist Step 2 draft to localStorage:', e);
+    }
+  }, [loading, step2StorageKey, rombelGroups]);
+
+  // Helper: Load Step 2 rombel data
+  const loadRombelData = useCallback(
+    async (coursesToLoad = plannedCourses) => {
+      if (!activeTerm?.id || coursesToLoad.length === 0) return [];
+
+      setLoadingRombel(true);
+      try {
+        let savedDraft: Record<string, RombelOfferingDraft> = {};
+        const rawDraft = localStorage.getItem(step2StorageKey);
+        if (rawDraft) {
+          try {
+            savedDraft = JSON.parse(rawDraft);
+          } catch {}
+        }
+
+        const groups = await schedulingRombelService.loadRombelDataForStep2(
+          activeTerm.id,
+          coursesToLoad,
+          savedDraft
+        );
+        setRombelGroups(groups);
+        return groups;
+      } catch (err) {
+        console.error('Failed to load rombel data:', err);
+        toast.error('Gagal memuat penawaran kelas untuk rombel.');
+        return [];
+      } finally {
+        setLoadingRombel(false);
+      }
+    },
+    [activeTerm?.id, plannedCourses, step2StorageKey]
+  );
+
+  // Helper: Load Step 3 data
+  const loadStep3Data = useCallback(
+    async (groupsToUse?: CourseRombelGroup[]) => {
+      const targetGroups = groupsToUse || rombelGroups;
+      if (!targetGroups || targetGroups.length === 0) return;
+
+      setLoadingStep3(true);
+      try {
+        const res = await schedulingLecturersService.loadStep3Lecturers(targetGroups);
+        setStep3Data(res);
+      } catch (err: any) {
+        console.error('Error loading Step 3 data:', err);
+        toast.error('Gagal memuat penugasan dosen pengampu.');
+      } finally {
+        setLoadingStep3(false);
+      }
+    },
+    [rombelGroups]
+  );
+
+  // If initial load restored activeStep === 2 or 3, fetch appropriate data
+  useEffect(() => {
+    if (
+      !loading &&
+      (activeStep === 2 || activeStep === 3) &&
+      activeTerm?.id &&
+      plannedCourses.length > 0 &&
+      rombelGroups.length === 0
+    ) {
+      loadRombelData(plannedCourses).then((loadedGroups) => {
+        if (activeStep === 3 && loadedGroups && loadedGroups.length > 0) {
+          loadStep3Data(loadedGroups);
+        }
+      });
+    }
+  }, [
+    loading,
+    activeStep,
+    activeTerm?.id,
+    plannedCourses,
+    rombelGroups.length,
+    loadRombelData,
+    loadStep3Data,
+  ]);
+
+  // Handler: Start template mode
+  const handleStartTemplate = () => {
+    setScheduleCreationMode('TEMPLATE');
+  };
+
+  // Handler: Start manual mode
+  const handleStartManual = () => {
+    setScheduleCreationMode('MANUAL');
+  };
+
+  // Handler: Reset workflow
+  const handleResetWorkflow = () => {
+    if (plannedCourses.length > 0) {
+      if (!window.confirm('Mulai ulang penyusunan jadwal? Seluruh pilihan dan draf rombel akan dikosongkan.')) {
+        return;
+      }
+    }
+    setActiveStep(1);
+    setScheduleCreationMode(null);
+    setPlannedCourses([]);
+    setParticipantInputMap({});
+    setRombelGroups([]);
+    setStep3Data(null);
+    setHasUnsavedRombelChanges(false);
+    try {
+      localStorage.removeItem(step1StorageKey);
+      localStorage.removeItem(step2StorageKey);
+    } catch {}
+    toast.info('Penyusunan jadwal telah diatur ulang.');
+  };
+
+  // Handler: Toggle Curriculum (2026 / 2022)
+  const handleToggleCurriculum = (year: number) => {
+    setActiveCurricula((prev) => {
+      if (prev.includes(year)) {
+        if (prev.length === 1) {
+          toast.info('Minimal satu kurikulum harus aktif.');
+          return prev;
+        }
+        return prev.filter((y) => y !== year);
+      } else {
+        return [...prev, year];
+      }
+    });
+  };
+
+  // Handler: Single Course Toggle
+  const handleToggleCourse = (
+    pkg: CurriculumPackage,
+    course: CurriculumPackageCourse,
+    category?: string
+  ) => {
+    const selectionKey = `${pkg.id}:${course.code}`;
+    const exists = plannedCourses.some((pc) => pc.selectionKey === selectionKey);
+
+    if (exists) {
+      setPlannedCourses((prev) => prev.filter((pc) => pc.selectionKey !== selectionKey));
+    } else {
+      const sem = Number(pkg.payload?.semester || 1);
+      const year = Number(pkg.payload?.curriculum_year || 2026);
+      const existingInput = participantInputMap[selectionKey];
+
+      const newPlanned: PlannedCourse = {
+        selectionKey,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        courseCode: course.code,
+        courseName: course.name,
+        sks: course.sks,
+        semester: sem,
+        curriculumYear: year,
+        kbkCode: pkg.payload?.kbk_code || null,
+        kbkName: pkg.payload?.kbk_name || null,
+        legacyTrack: pkg.payload?.legacy_track || null,
+        category: category || '-',
+        totalParticipants: existingInput !== undefined ? existingInput : 0,
+      };
+
+      setPlannedCourses((prev) => [...prev, newPlanned]);
+    }
+  };
+
+  // Handler: Update Participants in Step 1
+  const handleUpdateParticipants = (selectionKey: string, count: number) => {
+    const sanitizedCount = Math.max(0, count);
+    setParticipantInputMap((prev) => ({
+      ...prev,
+      [selectionKey]: sanitizedCount,
+    }));
+
+    setPlannedCourses((prev) =>
+      prev.map((pc) =>
+        pc.selectionKey === selectionKey
+          ? { ...pc, totalParticipants: sanitizedCount }
+          : pc
+      )
+    );
+  };
+
+  // Handler: Toggle Whole Package
+  const handleTogglePackage = (pkg: CurriculumPackage, catMap: Map<string, string>) => {
+    const courses = pkg.payload?.courses || [];
+    if (courses.length === 0) return;
+
+    const allKeys = courses.map((c) => `${pkg.id}:${c.code}`);
+    const areAllSelected = allKeys.every((k) => plannedCourses.some((pc) => pc.selectionKey === k));
+
+    if (areAllSelected) {
+      // Deselect all
+      setPlannedCourses((prev) => prev.filter((pc) => !allKeys.includes(pc.selectionKey)));
+    } else {
+      // Select all in package
+      const sem = Number(pkg.payload?.semester || 1);
+      const year = Number(pkg.payload?.curriculum_year || 2026);
+
+      const itemsToAdd: PlannedCourse[] = [];
+      courses.forEach((course) => {
+        const key = `${pkg.id}:${course.code}`;
+        if (!plannedCourses.some((pc) => pc.selectionKey === key)) {
+          const category = catMap.get(course.code.trim().toUpperCase()) || 'Wajib';
+          const existingInput = participantInputMap[key];
+          itemsToAdd.push({
+            selectionKey: key,
+            packageId: pkg.id,
+            packageName: pkg.name,
+            courseCode: course.code,
+            courseName: course.name,
+            sks: course.sks,
+            semester: sem,
+            curriculumYear: year,
+            kbkCode: pkg.payload?.kbk_code || null,
+            kbkName: pkg.payload?.kbk_name || null,
+            legacyTrack: pkg.payload?.legacy_track || null,
+            category,
+            totalParticipants: existingInput !== undefined ? existingInput : 0,
+          });
+        }
+      });
+
+      setPlannedCourses((prev) => [...prev, ...itemsToAdd]);
+    }
+  };
+
+  // Handler: Global Select All from template (for filtered packages)
+  const handleSelectAllFromTemplate = (packagesToSelect: CurriculumPackage[]) => {
+    const newItemsMap = new Map<string, PlannedCourse>();
+
+    // keep existing
+    plannedCourses.forEach((pc) => newItemsMap.set(pc.selectionKey, pc));
+
+    let addedCount = 0;
+    packagesToSelect.forEach((pkg) => {
+      const courses = pkg.payload?.courses || [];
+      const sem = Number(pkg.payload?.semester || 1);
+      const year = Number(pkg.payload?.curriculum_year || 2026);
+
+      courses.forEach((course) => {
+        const key = `${pkg.id}:${course.code}`;
+        if (!newItemsMap.has(key)) {
+          const category = categoryMap.get(course.code.trim().toUpperCase()) || 'Wajib';
+          const existingInput = participantInputMap[key];
+          newItemsMap.set(key, {
+            selectionKey: key,
+            packageId: pkg.id,
+            packageName: pkg.name,
+            courseCode: course.code,
+            courseName: course.name,
+            sks: course.sks,
+            semester: sem,
+            curriculumYear: year,
+            kbkCode: pkg.payload?.kbk_code || null,
+            kbkName: pkg.payload?.kbk_name || null,
+            legacyTrack: pkg.payload?.legacy_track || null,
+            category,
+            totalParticipants: existingInput !== undefined ? existingInput : 0,
+          });
+          addedCount++;
+        }
+      });
+    });
+
+    setPlannedCourses(Array.from(newItemsMap.values()));
+    toast.success(`${addedCount} mata kuliah ditambahkan dari template.`);
+  };
+
+  // Handler: Clear All Step 1
+  const handleClearAll = () => {
+    if (plannedCourses.length === 0) return;
+    setPlannedCourses([]);
+    toast.info('Semua pilihan mata kuliah dikosongkan.');
+  };
+
+  // Handler: Select all in a semester
+  const handleSelectSemesterCourses = (_semester: number, packagesInSemester: CurriculumPackage[]) => {
+    const newItemsMap = new Map<string, PlannedCourse>();
+    plannedCourses.forEach((pc) => newItemsMap.set(pc.selectionKey, pc));
+
+    packagesInSemester.forEach((pkg) => {
+      const courses = pkg.payload?.courses || [];
+      const sem = Number(pkg.payload?.semester || 1);
+      const year = Number(pkg.payload?.curriculum_year || 2026);
+
+      courses.forEach((course) => {
+        const key = `${pkg.id}:${course.code}`;
+        if (!newItemsMap.has(key)) {
+          const category = categoryMap.get(course.code.trim().toUpperCase()) || 'Wajib';
+          const existingInput = participantInputMap[key];
+          newItemsMap.set(key, {
+            selectionKey: key,
+            packageId: pkg.id,
+            packageName: pkg.name,
+            courseCode: course.code,
+            courseName: course.name,
+            sks: course.sks,
+            semester: sem,
+            curriculumYear: year,
+            kbkCode: pkg.payload?.kbk_code || null,
+            kbkName: pkg.payload?.kbk_name || null,
+            legacyTrack: pkg.payload?.legacy_track || null,
+            category,
+            totalParticipants: existingInput !== undefined ? existingInput : 0,
+          });
+        }
+      });
+    });
+
+    setPlannedCourses(Array.from(newItemsMap.values()));
+    toast.success(`Mata kuliah Semester ${_semester} dipilih.`);
+  };
+
+  // Handler: Clear all in a semester
+  const handleClearSemesterCourses = (_semester: number, packagesInSemester: CurriculumPackage[]) => {
+    const keysToRemove = new Set<string>();
+    packagesInSemester.forEach((pkg) => {
+      const courses = pkg.payload?.courses || [];
+      courses.forEach((c) => keysToRemove.add(`${pkg.id}:${c.code}`));
+    });
+
+    setPlannedCourses((prev) => prev.filter((pc) => !keysToRemove.has(pc.selectionKey)));
+    toast.info(`Mata kuliah Semester ${_semester} dikosongkan.`);
+  };
+
+  // Validation: Check if any selected course has 0 or empty participants
+  // PRAKTIKUM EXCLUDED: Praktikum tidak memerlukan pembagian rombel dan tidak wajib isi jumlah peserta
+  const hasInvalidParticipants = useMemo(() => {
+    if (plannedCourses.length === 0) return false;
+    return plannedCourses
+      .filter((pc) => !isPracticum(pc) && !isKKN(pc))
+      .some((pc) => {
+        const count = participantInputMap[pc.selectionKey] !== undefined
+          ? participantInputMap[pc.selectionKey]
+          : pc.totalParticipants;
+        return count === undefined || count === null || Number(count) <= 0;
+      });
+  }, [plannedCourses, participantInputMap]);
+
+  // Total participants only calculated from lecture courses (non-practicum)
+  const totalParticipantsSum = useMemo(() => {
+    return plannedCourses
+      .filter((pc) => !isPracticum(pc) && !isKKN(pc))
+      .reduce((acc, pc) => {
+        const count = participantInputMap[pc.selectionKey] !== undefined
+          ? participantInputMap[pc.selectionKey]
+          : pc.totalParticipants;
+        return acc + (Number(count) || 0);
+      }, 0);
+  }, [plannedCourses, participantInputMap]);
+
+  // Separate counters for theory and practicum courses
+  const theoryCoursesCount = useMemo(() => {
+    return plannedCourses.filter((pc) => !isPracticum(pc) && !isKKN(pc)).length;
+  }, [plannedCourses]);
+
+  const practicumCoursesCount = useMemo(() => {
+    return plannedCourses.filter((pc) => isPracticum(pc)).length;
+  }, [plannedCourses]);
+
+  // Handler: Continue button click from Step 1 -> Move to Step 2
+  const handleContinueToStep2 = async () => {
+    if (plannedCourses.length === 0) {
+      toast.error('Pilih minimal satu mata kuliah untuk melanjutkan.');
+      return;
+    }
+    if (hasInvalidParticipants) {
+      toast.error('Isi jumlah peserta untuk seluruh mata kuliah teori yang dipilih.');
+      return;
+    }
+
+    // Move to Step 2 and load Rombel data
+    setActiveStep(2);
+    await loadRombelData(plannedCourses);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Handler: Back to Step 1
+  const handleBackToStep1 = () => {
+    setActiveStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // STEP 2 HANDLERS:
+  // 1. Toggle offering active status
+  const handleToggleOfferingActive = (offeringId: string) => {
+    setHasUnsavedRombelChanges(true);
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        const containsOffering = group.offerings.some((o) => o.id === offeringId);
+        if (!containsOffering) return group;
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (off.id === offeringId) {
+            const nextActive = !off.active;
+            const nextCount = nextActive ? off.currentParticipants : 0;
+            const capRes = calculateTargetRoomCapacity(
+              nextActive ? nextCount : 0,
+              group.eligibleCapacities
+            );
+            return {
+              ...off,
+              active: nextActive,
+              currentParticipants: nextCount,
+              targetRoomCapacity: nextActive ? capRes.targetRoomCapacity : null,
+              seatWaste: nextActive ? capRes.seatWaste : 0,
+              isOversized: nextActive ? capRes.isOversized : false,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+  };
+
+  // 2. Update participant count on an offering
+  const handleUpdateOfferingParticipants = (offeringId: string, count: number) => {
+    setHasUnsavedRombelChanges(true);
+    const sanitized = Math.max(0, count);
+
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        const containsOffering = group.offerings.some((o) => o.id === offeringId);
+        if (!containsOffering) return group;
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (off.id === offeringId) {
+            const capRes = calculateTargetRoomCapacity(sanitized, group.eligibleCapacities);
+            return {
+              ...off,
+              currentParticipants: sanitized,
+              targetRoomCapacity: capRes.targetRoomCapacity,
+              seatWaste: capRes.seatWaste,
+              isOversized: capRes.isOversized,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+  };
+
+  // 3. Select Section Count (Quick Selector)
+  const handleSelectSectionCount = (targetGroup: CourseRombelGroup, desiredCount: number) => {
+    setHasUnsavedRombelChanges(true);
+    const count = Math.min(targetGroup.offerings.length, Math.max(1, desiredCount));
+
+    // Activate the first `count` offerings
+    const updatedOfferingsInit = targetGroup.offerings.map((off, idx) => ({
+      ...off,
+      active: idx < count,
+      currentParticipants: 0,
+    }));
+
+    // Auto distribute evenly across these active offerings
+    const targets = updatedOfferingsInit.map((o) => ({
+      id: o.id,
+      class_code: o.class_code,
+      expectedStudents: 0,
+      active: o.active,
+    }));
+
+    const distributed = distributeParticipantsWithRoomCapacity(
+      targetGroup.totalParticipantsStep1,
+      targets,
+      targetGroup.eligibleCapacities,
+      true
+    );
+    const distMap = new Map(distributed.map((d) => [d.offeringId, d]));
+
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        if (group.selectionKey !== targetGroup.selectionKey) return group;
+
+        const updatedOfferings = group.offerings.map((off, idx) => {
+          const isActive = idx < count;
+          const distItem = distMap.get(off.id);
+          const studentCount = isActive && distItem ? distItem.expectedStudents : 0;
+          const capRes = calculateTargetRoomCapacity(
+            isActive ? studentCount : 0,
+            group.eligibleCapacities
+          );
+
+          return {
+            ...off,
+            active: isActive,
+            currentParticipants: studentCount,
+            targetRoomCapacity: isActive ? capRes.targetRoomCapacity : null,
+            seatWaste: isActive ? capRes.seatWaste : 0,
+            isOversized: isActive ? capRes.isOversized : false,
+          };
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+    toast.success(`Diatur menjadi ${count} rombel aktif.`);
+  };
+
+  // 4. Auto Distribute Single Course
+  const handleAutoDistributeCourse = (targetGroup: CourseRombelGroup) => {
+    setHasUnsavedRombelChanges(true);
+    const targets = targetGroup.offerings.map((o) => ({
+      id: o.id,
+      class_code: o.class_code,
+      expectedStudents: o.currentParticipants,
+      active: o.active,
+    }));
+
+    const distributed = distributeParticipantsWithRoomCapacity(
+      targetGroup.totalParticipantsStep1,
+      targets,
+      targetGroup.eligibleCapacities,
+      false
+    );
+    const distMap = new Map(distributed.map((d) => [d.offeringId, d]));
+
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        if (group.selectionKey !== targetGroup.selectionKey) return group;
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (distMap.has(off.id)) {
+            const distItem = distMap.get(off.id)!;
+            return {
+              ...off,
+              currentParticipants: distItem.expectedStudents,
+              targetRoomCapacity: distItem.targetRoomCapacity,
+              seatWaste: distItem.seatWaste,
+              isOversized: distItem.isOversized,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+    toast.success(`Distribusi peserta untuk ${targetGroup.courseName} diperbarui.`);
+  };
+
+  // 5. Recalculate Single Course (recalculateAll = true)
+  const handleRecalculateCourse = (targetGroup: CourseRombelGroup) => {
+    setHasUnsavedRombelChanges(true);
+    const targets = targetGroup.offerings.map((o) => ({
+      id: o.id,
+      class_code: o.class_code,
+      expectedStudents: 0,
+      active: o.active,
+    }));
+
+    const distributed = distributeParticipantsWithRoomCapacity(
+      targetGroup.totalParticipantsStep1,
+      targets,
+      targetGroup.eligibleCapacities,
+      true
+    );
+    const distMap = new Map(distributed.map((d) => [d.offeringId, d]));
+
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        if (group.selectionKey !== targetGroup.selectionKey) return group;
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (distMap.has(off.id)) {
+            const distItem = distMap.get(off.id)!;
+            return {
+              ...off,
+              currentParticipants: distItem.expectedStudents,
+              targetRoomCapacity: distItem.targetRoomCapacity,
+              seatWaste: distItem.seatWaste,
+              isOversized: distItem.isOversized,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+    toast.success(`Peserta ${targetGroup.courseName} dihitung ulang.`);
+  };
+
+  // 6. Auto Distribute All Courses
+  const handleAutoDistributeAll = () => {
+    setHasUnsavedRombelChanges(true);
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        // PRAKTIKUM EXCLUDED: Praktikum does not participate in room distribution
+        if (group.offerings.length === 0 || isPracticum(group)) return group;
+
+        const targets = group.offerings.map((o) => ({
+          id: o.id,
+          class_code: o.class_code,
+          expectedStudents: o.currentParticipants,
+          active: o.active,
+        }));
+
+        const distributed = distributeParticipantsWithRoomCapacity(
+          group.totalParticipantsStep1,
+          targets,
+          group.eligibleCapacities,
+          false
+        );
+        const distMap = new Map(distributed.map((d) => [d.offeringId, d]));
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (distMap.has(off.id)) {
+            const distItem = distMap.get(off.id)!;
+            return {
+              ...off,
+              currentParticipants: distItem.expectedStudents,
+              targetRoomCapacity: distItem.targetRoomCapacity,
+              seatWaste: distItem.seatWaste,
+              isOversized: distItem.isOversized,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+    toast.success('Bagi otomatis room-capacity aware diterapkan ke seluruh mata kuliah.');
+  };
+
+  // 7. Recalculate All Courses
+  const handleRecalculateAll = () => {
+    setHasUnsavedRombelChanges(true);
+    setRombelGroups((prev) =>
+      prev.map((group) => {
+        // PRAKTIKUM EXCLUDED: Praktikum does not participate in room distribution
+        if (group.offerings.length === 0 || isPracticum(group)) return group;
+
+        const targets = group.offerings.map((o) => ({
+          id: o.id,
+          class_code: o.class_code,
+          expectedStudents: 0,
+          active: o.active,
+        }));
+
+        const distributed = distributeParticipantsWithRoomCapacity(
+          group.totalParticipantsStep1,
+          targets,
+          group.eligibleCapacities,
+          true
+        );
+        const distMap = new Map(distributed.map((d) => [d.offeringId, d]));
+
+        const updatedOfferings = group.offerings.map((off) => {
+          if (distMap.has(off.id)) {
+            const distItem = distMap.get(off.id)!;
+            return {
+              ...off,
+              currentParticipants: distItem.expectedStudents,
+              targetRoomCapacity: distItem.targetRoomCapacity,
+              seatWaste: distItem.seatWaste,
+              isOversized: distItem.isOversized,
+            };
+          }
+          return off;
+        });
+
+        const totalDistributed = updatedOfferings.reduce(
+          (acc, o) => acc + (o.active ? o.currentParticipants : 0),
+          0
+        );
+        const remaining = group.totalParticipantsStep1 - totalDistributed;
+        const totalSeatWaste = updatedOfferings.reduce((acc, o) => acc + (o.seatWaste || 0), 0);
+        const hasOversizedOffering = updatedOfferings.some((o) => o.active && o.isOversized);
+
+        let status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+        if (updatedOfferings.length === 0) status = 'TIDAK_ADA_KELAS';
+        else if (hasOversizedOffering) status = 'TIDAK_FEASIBLE';
+        else if (totalDistributed === group.totalParticipantsStep1) status = 'LENGKAP';
+        else if (totalDistributed < group.totalParticipantsStep1) status = 'KURANG';
+        else status = 'LEBIH';
+
+        return {
+          ...group,
+          offerings: updatedOfferings,
+          totalDistributed,
+          remaining,
+          totalSeatWaste,
+          hasOversizedOffering,
+          status,
+        };
+      })
+    );
+    toast.success('Seluruh pembagian rombel dihitung ulang merata.');
+  };
+
+  // 8. Save Rombel Distribution to Supabase
+  const handleSaveRombel = async () => {
+    const hasInfeasible = rombelGroups.some((g) => g.status === 'TIDAK_FEASIBLE');
+    if (hasInfeasible) {
+      toast.error('Ada kelas yang melebihi kapasitas ruang maksimal. Perbaiki sebelum menyimpan.');
+      return;
+    }
+
+    setSavingRombel(true);
+    try {
+      await schedulingRombelService.saveRombelDistribution(rombelGroups);
+      setHasUnsavedRombelChanges(false);
+      toast.success('Pembagian rombel berhasil disimpan.');
+      // Refetch to sync state
+      await loadRombelData(plannedCourses);
+    } catch (err: any) {
+      console.error('Save rombel error:', err);
+      toast.error('Gagal menyimpan pembagian rombel.');
+    } finally {
+      setSavingRombel(false);
+    }
+  };
+
+  // 9. Continue to Step 3 (Validation check and activate Step 3)
+  const handleContinueToStep3 = async () => {
+    // PRAKTIKUM EXCLUDED: Praktikum does not participate in room or rombel distribution
+    const invalidGroups = rombelGroups
+      .filter((g) => !isPracticum(g))
+      .filter((g) => g.status !== 'LENGKAP' && g.status !== 'TIDAK_ADA_KELAS');
+
+    if (invalidGroups.length > 0) {
+      const infeasible = invalidGroups.find((g) => g.status === 'TIDAK_FEASIBLE');
+      if (infeasible) {
+        toast.error('Ada kelas yang melebihi kapasitas ruang maksimal (Tidak Feasible).');
+      } else {
+        toast.error('Pastikan distribusi seluruh mata kuliah telah lengkap sebelum melanjutkan.');
+      }
+      return;
+    }
+
+    // Auto-save rombel distribution to database if dirty
+    if (hasUnsavedRombelChanges) {
+      try {
+        await schedulingRombelService.saveRombelDistribution(rombelGroups);
+        setHasUnsavedRombelChanges(false);
+      } catch (err) {
+        console.warn('Auto save before moving to step 3:', err);
+      }
+    }
+
+    // 2. SIMPAN SCOPE JADWAL:
+    // Kumpulkan semua course_offering_id yang:
+    // - dipilih workflow
+    // - expected_students > 0
+    // - bukan praktikum
+    // - bukan KKN
+    try {
+      const activeOfferingIds: string[] = [];
+      for (const group of rombelGroups) {
+        if (isPracticum(group.courseName) || isPracticum(group.courseCode)) continue;
+        if (isKKN(group.courseName) || isKKN(group.courseCode)) continue;
+        for (const off of group.offerings) {
+          const students = off.currentParticipants || off.expected_students || 0;
+          if (off.active !== false && students > 0) {
+            activeOfferingIds.push(off.id);
+          }
+        }
+      }
+
+      if (activeOfferingIds.length > 0 && activeTerm?.id) {
+        const draft = await ensureCurrentDraftVersion();
+        const { data: newRevision, error: scopeErr } = await supabase.rpc('set_schedule_scope', {
+          p_version_id: draft.id,
+          p_expected_revision: draft.revision,
+          p_offering_ids: activeOfferingIds,
+        });
+
+        if (scopeErr) {
+          console.warn('set_schedule_scope RPC warning:', scopeErr);
+        } else if (newRevision !== undefined && newRevision !== null) {
+          const rev = typeof newRevision === 'number' ? newRevision : (newRevision as any).revision ?? draft.revision;
+          setCurrentVersion((prev) =>
+            prev ? { ...prev, revision: rev, scope_offering_ids: activeOfferingIds } : null
+          );
+        }
+      }
+    } catch (scopeErr) {
+      console.warn('Warning setting schedule scope after Step 2:', scopeErr);
+    }
+
+    setActiveStep(3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    await loadStep3Data(rombelGroups);
+  };
+
+  // STEP 3 HANDLERS:
+  // Back to Step 2
+  const handleBackToStep2 = () => {
+    setActiveStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Sync Step 3 from Master
+  const handleSyncStep3FromMaster = async () => {
+    setSyncingStep3(true);
+    try {
+      const res = await schedulingLecturersService.loadStep3Lecturers(rombelGroups);
+      setStep3Data(res);
+    } catch (err: any) {
+      console.error('Sync step 3 error:', err);
+      toast.error('Gagal menyinkronkan data dosen dari Master.');
+    } finally {
+      setSyncingStep3(false);
+    }
+  };
+
+  // Handle selecting primary lecturer for an offering
+  const handleSelectPrimaryLecturer = async (offeringId: string, lecturerId: string) => {
+    await schedulingLecturersService.updatePrimaryLecturer(offeringId, lecturerId);
+
+    setStep3Data((prev) => {
+      if (!prev) return prev;
+      const updatedRows = prev.rows.map((row) => {
+        if (row.offeringId !== offeringId) return row;
+
+        const newPrimary =
+          row.candidates.find((c) => c.lecturerId === lecturerId) || row.primaryLecturer;
+        const isNowValid =
+          newPrimary !== null && !newPrimary.isLecturerInactive && !newPrimary.isLecturerMissing;
+
+        return {
+          ...row,
+          primaryLecturer: newPrimary,
+          primaryLecturerId: lecturerId,
+          isManuallySelected: true,
+          status: isNowValid ? ('SIAP' as const) : row.status,
+          isValid: isNowValid,
+        };
+      });
+
+      const isAllValid = updatedRows.length > 0 && updatedRows.every((r) => r.isValid);
+      const totalWithPengampu = updatedRows.filter(
+        (r) =>
+          r.hasPengampu &&
+          r.primaryLecturer &&
+          !r.primaryLecturer.isLecturerInactive &&
+          !r.primaryLecturer.isLecturerMissing
+      ).length;
+      const totalMissingPengampu = updatedRows.filter(
+        (r) => !r.hasPengampu || !r.primaryLecturer || r.primaryLecturer.isLecturerMissing
+      ).length;
+      const totalInactiveLecturers = updatedRows.filter(
+        (r) => r.primaryLecturer?.isLecturerInactive || r.hasInactiveLecturer
+      ).length;
+
+      // Update conflict maps for scheduler (strictly 1 primary lecturer per class)
+      const offeringLecturerIdsMap = {
+        ...prev.offeringLecturerIdsMap,
+        [offeringId]: [lecturerId],
+      };
+
+      const targetRow = updatedRows.find((r) => r.offeringId === offeringId);
+      const offeringLecturerRolesMap = {
+        ...prev.offeringLecturerRolesMap,
+        [offeringId]: [
+          {
+            lecturerId,
+            assignmentRole: 'PENGAMPU',
+            lecturerName: targetRow?.primaryLecturer?.lecturerName || '',
+            lecturerCode: targetRow?.primaryLecturer?.lecturerCode || '',
+          },
+        ],
+      };
+
+      return {
+        ...prev,
+        rows: updatedRows,
+        totalWithPengampu,
+        totalMissingPengampu,
+        totalInactiveLecturers,
+        isAllValid,
+        offeringLecturerIdsMap,
+        offeringLecturerRolesMap,
+      };
+    });
+  };
+
+  // STEP 4 HANDLERS & LOADER:
+  const loadStep4Data = useCallback(
+    async (forceRegenerate: boolean = false) => {
+      if (!activeTerm?.id) return;
+      setLoadingStep4(true);
+      try {
+        const data = await schedulingInitialService.loadStep4Data(
+          activeTerm.id,
+          step3Data?.rows,
+          rombelGroups
+        );
+
+        setStep4Rooms(data.rooms);
+        setStep4Offerings(data.offerings);
+        setStep4TimeSlots(data.timeSlots);
+        setStep4Availabilities(data.availabilities);
+
+        // Check if current draft version in database already has entries saved
+        let loadedFromDb = false;
+        const targetDraft = currentVersion || data.existingVersion;
+        if (targetDraft?.id && !forceRegenerate) {
+          try {
+            const dbEntries = await schedulingOptimizationService.fetchVersionScheduleEntries(
+              targetDraft.id,
+              data.rooms,
+              data.offerings
+            );
+            if (dbEntries.length > 0) {
+              setStep4Entries(dbEntries);
+              loadedFromDb = true;
+            }
+          } catch (dbErr) {
+            console.warn('Could not load entries from DB draft:', dbErr);
+          }
+        }
+
+        // Auto-synchronize scope_offering_ids on draft if not set yet
+        if (targetDraft?.id && (!targetDraft.scope_offering_ids || targetDraft.scope_offering_ids.length === 0)) {
+          const offeringIds = data.offerings.map((o) => o.id);
+          if (offeringIds.length > 0) {
+            try {
+              const { data: newRev } = await supabase.rpc('set_schedule_scope', {
+                p_version_id: targetDraft.id,
+                p_expected_revision: targetDraft.revision,
+                p_offering_ids: offeringIds,
+              });
+              if (newRev !== undefined && newRev !== null) {
+                const rev = typeof newRev === 'number' ? newRev : (newRev as any).revision ?? targetDraft.revision;
+                setCurrentVersion((prev) =>
+                  prev ? { ...prev, revision: rev, scope_offering_ids: offeringIds } : null
+                );
+              }
+            } catch (scopeErr) {
+              console.warn('Auto set scope error in Step 4:', scopeErr);
+            }
+          }
+        }
+
+        if (!loadedFromDb) {
+          // Check if there is already a cached schedule in localStorage
+          let savedSchedule: {
+            entries: InitialScheduleEntry[];
+            conflicts: InitialScheduleConflict[];
+            stats: InitialScheduleStats;
+          } | null = null;
+
+          if (!forceRegenerate && step4StorageKey) {
+            try {
+              const raw = localStorage.getItem(step4StorageKey);
+              if (raw) savedSchedule = JSON.parse(raw);
+            } catch (e) {
+              console.warn('Failed to parse Step 4 draft from localStorage:', e);
+            }
+          }
+
+          if (savedSchedule && savedSchedule.entries?.length > 0) {
+            setStep4Entries(savedSchedule.entries);
+            setStep4Conflicts(savedSchedule.conflicts || []);
+            setStep4Stats(savedSchedule.stats);
+          } else {
+            // Generate fresh initial schedule
+            const res = schedulingInitialService.generateInitialSchedule(
+              data.offerings,
+              data.rooms,
+              data.timeSlots,
+              data.availabilities
+            );
+            setStep4Entries(res.entries);
+            setStep4Conflicts(res.conflicts);
+            setStep4Stats(res.stats);
+
+            if (step4StorageKey) {
+              try {
+                localStorage.setItem(step4StorageKey, JSON.stringify(res));
+              } catch (e) {
+                console.warn('Failed to save Step 4 draft to localStorage:', e);
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error('Error loading Step 4 data:', err);
+        toast.error('Gagal memuat data jadwal awal.');
+      } finally {
+        setLoadingStep4(false);
+      }
+    },
+    [activeTerm?.id, step3Data?.rows, rombelGroups, step4StorageKey]
+  );
+
+  // Auto-load Step 4 data if (activeStep === 4 || activeStep === 5 || activeStep === 6) and entries are not yet loaded
+  useEffect(() => {
+    if ((activeStep === 4 || activeStep === 5 || activeStep === 6) && step4Entries.length === 0 && !loadingStep4 && activeTerm?.id) {
+      loadStep4Data();
+    }
+  }, [activeStep, step4Entries.length, loadingStep4, activeTerm?.id, loadStep4Data]);
+
+  const handleRegenerateStep4 = async () => {
+    setGeneratingStep4(true);
+    try {
+      let offeringsToUse = step4Offerings;
+      let roomsToUse = step4Rooms;
+      let slotsToUse = step4TimeSlots;
+      let availsToUse = step4Availabilities;
+
+      if (offeringsToUse.length === 0 && activeTerm?.id) {
+        const fresh = await schedulingInitialService.loadStep4Data(
+          activeTerm.id,
+          step3Data?.rows,
+          rombelGroups
+        );
+        offeringsToUse = fresh.offerings;
+        roomsToUse = fresh.rooms;
+        slotsToUse = fresh.timeSlots;
+        availsToUse = fresh.availabilities;
+        setStep4Offerings(fresh.offerings);
+        setStep4Rooms(fresh.rooms);
+        setStep4TimeSlots(fresh.timeSlots);
+        setStep4Availabilities(fresh.availabilities);
+      }
+
+      const res = schedulingInitialService.generateInitialSchedule(
+        offeringsToUse,
+        roomsToUse,
+        slotsToUse,
+        availsToUse
+      );
+
+      setStep4Entries(res.entries);
+      setStep4Conflicts(res.conflicts);
+      setStep4Stats(res.stats);
+
+      if (step4StorageKey) {
+        try {
+          localStorage.setItem(step4StorageKey, JSON.stringify(res));
+        } catch (e) {
+          console.warn('Failed to save Step 4 draft to localStorage:', e);
+        }
+      }
+
+      toast.success('Jadwal awal berhasil digenerate ulang.');
+    } catch (err: any) {
+      console.error('Regenerate step 4 error:', err);
+      toast.error('Gagal menggenerate ulang jadwal awal.');
+    } finally {
+      setGeneratingStep4(false);
+    }
+  };
+
+  const handleSaveStep4 = async () => {
+    if (!activeTerm?.id || step4Entries.length === 0) return;
+    setSavingStep4(true);
+    try {
+      const draft = await ensureCurrentDraftVersion();
+
+      const res = await schedulingInitialService.saveInitialScheduleToSupabase(
+        activeTerm.id,
+        activeTerm.academic_year || '2026/2027',
+        activeTerm.semester_type || selectedSemesterType,
+        step4Entries,
+        draft.id
+      );
+
+      setCurrentVersion(res.version);
+
+      // Refetch entries from backend directly so step4Entries have real database IDs
+      const backendEntries = await schedulingOptimizationService.fetchVersionScheduleEntries(
+        res.version.id,
+        step4Rooms,
+        step4Offerings
+      );
+      if (backendEntries.length > 0) {
+        setStep4Entries(backendEntries);
+      }
+
+      toast.success(`Jadwal awal berhasil disimpan (${res.savedCount} kelas).`);
+    } catch (err: any) {
+      console.error('Save step 4 error:', err);
+      toast.error('Gagal menyimpan jadwal awal ke database.');
+    } finally {
+      setSavingStep4(false);
+    }
+  };
+
+  const handleBackToStep3 = () => {
+    setActiveStep(3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Continue to Step 4 (Strictly validate and open Step 4)
+  const handleContinueToStep4 = async () => {
+    if (!step3Data?.isAllValid) {
+      toast.error('Masih ada rombel yang belum memiliki dosen pengampu aktif.');
+      return;
+    }
+
+    setActiveStep(4);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    await loadStep4Data();
+  };
+
+  // Continue to Step 5 (Simulated Annealing Optimization)
+  const handleContinueToStep5 = () => {
+    if (step4Entries.length === 0) {
+      toast.error('Belum ada jadwal awal yang digenerate pada Tahap 4.');
+      return;
+    }
+
+    setActiveStep(5);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToStep4 = () => {
+    setActiveStep(4);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 4. APPLY HASIL OPTIMASI (Step 5 -> Supabase DRAFT)
+  const handleSaveStep5 = async (optimizedEntries: InitialScheduleEntry[]) => {
+    if (!activeTerm?.id || optimizedEntries.length === 0) return;
+    setSavingStep5(true);
+    try {
+      const draft = await ensureCurrentDraftVersion();
+
+      // WAJIB memanggil save_draft_entries via service
+      const res = await schedulingOptimizationService.saveOptimizedScheduleToSupabase(
+        draft.id,
+        draft.revision,
+        optimizedEntries,
+        'SIMULATED_ANNEALING'
+      );
+
+      // 5. SETELAH APPLY:
+      // 1. refetch schedule_versions
+      const updatedVersions = await scheduleVersionsService.getVersions(activeTerm.id);
+      const latestDraft = updatedVersions.find((v) => v.id === draft.id) || res.version;
+      setCurrentVersion(latestDraft);
+
+      // 2. refetch schedule_entries
+      const backendEntries = await schedulingOptimizationService.fetchVersionScheduleEntries(
+        latestDraft.id,
+        step4Rooms,
+        step4Offerings
+      );
+      if (backendEntries.length > 0) {
+        setStep4Entries(backendEntries);
+      } else {
+        setStep4Entries(optimizedEntries);
+      }
+
+      // 3. refresh_schedule_conflicts(currentVersion.id)
+      await scheduleVersionsService.refreshConflicts(latestDraft.id);
+
+      // 4. refetch schedule_conflicts
+      const backendConflicts = await scheduleConflictsService.getConflicts(latestDraft.id, {
+        isResolved: false,
+      });
+      setStep4Conflicts(
+        backendConflicts.map((c) => ({
+          id: c.id,
+          type: (c.conflict_type === 'ROOM'
+            ? 'ROOM_OVERLAP'
+            : c.conflict_type === 'LECTURER'
+            ? 'LECTURER_OVERLAP'
+            : c.conflict_type === 'CAPACITY'
+            ? 'CAPACITY_EXCEEDED'
+            : 'ROOM_OVERLAP') as any,
+          severity: (c.severity === 'KRITIS' || c.severity === 'CRITICAL' ? 'CRITICAL' : 'HIGH') as any,
+          title: c.title,
+          description: c.description,
+          offeringIds: [c.conflict_source || ''],
+        }))
+      );
+
+      toast.success(
+        `Hasil optimasi berhasil disimpan ke draft database (${res.savedCount} kelas). Siap ditinjau pada Tahap 6.`
+      );
+    } catch (err: any) {
+      console.error('Save step 5 error:', err);
+      toast.error('Gagal menyimpan hasil optimasi ke database.');
+    } finally {
+      setSavingStep5(false);
+    }
+  };
+
+  const handleContinueToStep6 = (meta?: any) => {
+    if (meta) {
+      setOptimizationMeta(meta);
+    }
+    setActiveStep(6);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToStep5 = () => {
+    setActiveStep(5);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* 1. Page Header */}
+      <SchedulingActiveHeader
+        activeTerm={activeTerm}
+        mode={scheduleCreationMode}
+        onResetWorkflow={scheduleCreationMode ? handleResetWorkflow : undefined}
+      />
+
+      {/* 2. Workflow 6-Step Progress Stepper */}
+      <SchedulingStepper
+        currentStep={activeStep}
+        onStepClick={(step) => {
+          if (step <= activeStep) {
+            setActiveStep(step);
+          }
+        }}
+      />
+
+      {/* 3. Main Body */}
+      {loading ? (
+        /* Loading Skeleton */
+        <div className="space-y-4 animate-pulse">
+          <div className="h-20 bg-slate-200/70 rounded-2xl" />
+          <div className="h-64 bg-slate-200/50 rounded-2xl" />
+          <div className="h-64 bg-slate-200/50 rounded-2xl" />
+        </div>
+      ) : error ? (
+        /* Error State */
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-8 text-center space-y-4 shadow-2xs">
+          <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-rose-900">{error}</h3>
+            <p className="text-xs text-rose-600 max-w-md mx-auto">
+              Terjadi kendala saat menghubungkan ke database paket kurikulum. Pastikan koneksi dan tabel tersedia.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadInitialData}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Coba Lagi</span>
+          </button>
+        </div>
+      ) : !scheduleCreationMode ? (
+        /* Empty State */
+        <SchedulingEmptyState
+          onStartTemplate={handleStartTemplate}
+          onStartManual={handleStartManual}
+        />
+      ) : activeStep === 1 ? (
+        /* Step 1: Scheduling Template View */
+        <>
+          <SchedulingTemplateView
+            packages={packages}
+            categoryMap={categoryMap}
+            selectedSemesterType={selectedSemesterType}
+            onChangeSemesterType={setSelectedSemesterType}
+            selectedSemesterFilter={selectedSemesterFilter}
+            onChangeSemesterFilter={setSelectedSemesterFilter}
+            activeCurricula={activeCurricula}
+            onToggleCurriculum={handleToggleCurriculum}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            plannedCourses={plannedCourses}
+            participantInputMap={participantInputMap}
+            onToggleCourse={handleToggleCourse}
+            onUpdateParticipants={handleUpdateParticipants}
+            onSelectAllFromTemplate={handleSelectAllFromTemplate}
+            onClearAll={handleClearAll}
+            onSelectSemesterCourses={handleSelectSemesterCourses}
+            onClearSemesterCourses={handleClearSemesterCourses}
+            onTogglePackage={handleTogglePackage}
+          />
+
+          {/* Sticky Bottom Action Bar for Step 1 */}
+          <SchedulingStickyBar
+            selectedCount={plannedCourses.length}
+            theoryCount={theoryCoursesCount}
+            practicumCount={practicumCoursesCount}
+            totalParticipants={totalParticipantsSum}
+            hasInvalidParticipants={hasInvalidParticipants}
+            onContinue={handleContinueToStep2}
+          />
+        </>
+      ) : activeStep === 2 ? (
+        /* Step 2: Scheduling Rombel View */
+        loadingRombel ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="h-28 bg-slate-200/70 rounded-2xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+            </div>
+            <div className="h-64 bg-slate-200/50 rounded-2xl" />
+          </div>
+        ) : (
+          <SchedulingRombelView
+            groups={rombelGroups}
+            selectedSemesterType={selectedSemesterType}
+            selectedSemesterFilter={selectedSemesterFilter}
+            onChangeSemesterFilter={setSelectedSemesterFilter}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onToggleOfferingActive={handleToggleOfferingActive}
+            onUpdateOfferingParticipants={handleUpdateOfferingParticipants}
+            onSelectSectionCount={handleSelectSectionCount}
+            onAutoDistributeCourse={handleAutoDistributeCourse}
+            onRecalculateCourse={handleRecalculateCourse}
+            onAutoDistributeAll={handleAutoDistributeAll}
+            onRecalculateAll={handleRecalculateAll}
+            saving={savingRombel}
+            hasUnsavedChanges={hasUnsavedRombelChanges}
+            onSaveRombel={handleSaveRombel}
+            onBackToStep1={handleBackToStep1}
+            onContinueToStep3={handleContinueToStep3}
+          />
+        )
+      ) : activeStep === 3 ? (
+        /* Step 3: Scheduling Lecturers View */
+        loadingStep3 ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="h-28 bg-slate-200/70 rounded-2xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+            </div>
+            <div className="h-64 bg-slate-200/50 rounded-2xl" />
+          </div>
+        ) : (
+          <SchedulingLecturersView
+            rows={step3Data?.rows || []}
+            totalActiveOfferings={step3Data?.totalActiveOfferings || 0}
+            totalWithPengampu={step3Data?.totalWithPengampu || 0}
+            totalMultiCandidate={step3Data?.totalMultiCandidate || 0}
+            totalTeamTeaching={step3Data?.totalTeamTeaching || 0}
+            totalMissingPengampu={step3Data?.totalMissingPengampu || 0}
+            totalInactiveLecturers={step3Data?.totalInactiveLecturers || 0}
+            isAllValid={Boolean(step3Data?.isAllValid)}
+            selectedSemesterType={selectedSemesterType}
+            syncing={syncingStep3}
+            onSyncFromMaster={handleSyncStep3FromMaster}
+            onSelectPrimaryLecturer={handleSelectPrimaryLecturer}
+            onBackToStep2={handleBackToStep2}
+            onContinueToStep4={handleContinueToStep4}
+          />
+        )
+      ) : activeStep === 4 ? (
+        /* Step 4: Scheduling Initial Schedule View */
+        loadingStep4 ? (
+          <div className="space-y-4 animate-pulse">
+            <div className="h-28 bg-slate-200/70 rounded-2xl" />
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+              <div className="h-24 bg-slate-200/50 rounded-2xl" />
+            </div>
+            <div className="h-64 bg-slate-200/50 rounded-2xl" />
+          </div>
+        ) : (
+          <SchedulingInitialScheduleView
+            entries={step4Entries}
+            conflicts={step4Conflicts}
+            stats={step4Stats}
+            rooms={step4Rooms}
+            selectedSemesterType={selectedSemesterType}
+            generating={generatingStep4}
+            saving={savingStep4}
+            onRegenerate={handleRegenerateStep4}
+            onSaveInitialSchedule={handleSaveStep4}
+            onBackToStep3={handleBackToStep3}
+            onContinueToStep5={handleContinueToStep5}
+          />
+        )
+      ) : activeStep === 5 ? (
+        /* Step 5: Scheduling Simulated Annealing View */
+        <SchedulingSimulatedAnnealingView
+          entries={step4Entries}
+          rooms={step4Rooms}
+          timeSlots={step4TimeSlots}
+          availabilities={step4Availabilities}
+          selectedSemesterType={selectedSemesterType}
+          onBackToStep4={handleBackToStep4}
+          onContinueToStep6={handleContinueToStep6}
+          onSaveOptimizedSchedule={handleSaveStep5}
+          saving={savingStep5}
+        />
+      ) : activeStep === 6 ? (
+        /* Step 6: Preview & Publikasi */
+        <SchedulingPreviewPublishView
+          entries={step4Entries}
+          rooms={step4Rooms}
+          timeSlots={step4TimeSlots}
+          availabilities={step4Availabilities}
+          activeTerm={activeTerm}
+          selectedSemesterType={selectedSemesterType}
+          onBackToStep5={handleBackToStep5}
+          onRefreshEntries={loadStep4Data}
+          optimizationMeta={optimizationMeta}
+          currentVersion={currentVersion}
+          onUpdateVersion={setCurrentVersion}
+        />
+      ) : (
+        /* Fallback */
+        <div className="p-8 text-center text-slate-500">Tahap tidak ditemukan</div>
+      )}
+    </div>
+  );
+};
+

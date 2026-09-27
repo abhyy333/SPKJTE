@@ -20,9 +20,7 @@ export const scheduleEntriesService = {
             name,
             capacity,
             room_type,
-            is_active,
-            building,
-            floor
+            is_active
           ),
           course_offering:course_offering_id (
             id,

@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { SchedulingReadiness } from '../types';
+import { verifyOwnerAdmin } from '../lib/authGuard';
 
 export const dashboardService = {
   async getReadinessChecklist(): Promise<SchedulingReadiness> {
@@ -22,21 +23,32 @@ export const dashboardService = {
     }
 
     try {
+      const isOwner = await verifyOwnerAdmin();
+      const courseTable = isOwner ? 'courses' : 'guest_courses';
+      const lecturerTable = isOwner ? 'lecturers' : 'guest_lecturers';
+      const roomTable = isOwner ? 'rooms' : 'guest_rooms';
+
       const [
         { data: activeTerm },
-        { count: courseCount },
-        { count: lecturerCount },
-        { data: offerings },
-        { count: roomCount },
-        { count: slotCount },
+        courseRes,
+        lecturerRes,
+        offeringsRes,
+        roomRes,
+        slotRes,
       ] = await Promise.all([
         supabase.from('academic_terms').select('id, academic_year, semester_type').eq('is_active', true).maybeSingle(),
-        supabase.from('courses').select('*', { count: 'exact', head: true }).eq('is_schedulable', true),
-        supabase.from('lecturers').select('*', { count: 'exact', head: true }),
+        supabase.from(courseTable).select('*', { count: 'exact', head: true }),
+        supabase.from(lecturerTable).select('*', { count: 'exact', head: true }),
         supabase.from('course_offerings').select('id, expected_students, assignment_confirmed'),
-        supabase.from('rooms').select('*', { count: 'exact', head: true }).eq('is_active', true),
+        supabase.from(roomTable).select('*', { count: 'exact', head: true }),
         supabase.from('time_slots').select('*', { count: 'exact', head: true }).eq('is_active', true),
       ]);
+
+      const courseCount = courseRes.count || 0;
+      const lecturerCount = lecturerRes.count || 0;
+      const roomCount = roomRes.count || 0;
+      const slotCount = slotRes.count || 0;
+      const offerings = offeringsRes.data || [];
 
       const totalOfferings = offerings?.length || 0;
       const confirmedOfferings = offerings?.filter((o: any) => o.assignment_confirmed).length || 0;

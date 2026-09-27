@@ -1,4 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getActiveAcademicTerm } from './academicTerms.service';
+import { minuteToTime, timeToMinute } from '../lib/utils';
 import {
   CurrentPublishedSchedule,
   CurrentPublishedExam,
@@ -6,6 +8,16 @@ import {
   TimeSlot,
   ScheduleEntry,
 } from '../types';
+
+const DAY_NAMES: Record<number, string> = {
+  1: 'Senin',
+  2: 'Selasa',
+  3: 'Rabu',
+  4: 'Kamis',
+  5: 'Jumat',
+  6: 'Sabtu',
+  7: 'Minggu',
+};
 
 export const schedulesService = {
   async getAcademicTerms(): Promise<AcademicTerm[]> {
@@ -36,28 +48,8 @@ export const schedulesService = {
   },
 
   async getActiveTerm(): Promise<AcademicTerm | null> {
-    if (!isSupabaseConfigured()) return null;
-
     try {
-      const { data, error } = await supabase
-        .from('academic_terms')
-        .select('*')
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (error || !data) {
-        console.warn('Active term lookup error:', error);
-        return null;
-      }
-      return {
-        ...data,
-        academic_year: data.academic_year || data.year || '2026/2027',
-        semester_type: data.semester_type || data.term || 'GANJIL',
-        year: data.academic_year || data.year || '2026/2027',
-        term: data.semester_type || data.term || 'GANJIL',
-        starts_on: data.starts_on || data.start_date,
-        ends_on: data.ends_on || data.end_date,
-      };
+      return await getActiveAcademicTerm();
     } catch {
       return null;
     }
@@ -92,6 +84,27 @@ export const schedulesService = {
     }
 
     try {
+      // 1. Fetch lookup map for courses to ensure authentic effective_sks
+      const coursesMap = new Map<string, number>();
+      try {
+        const { data: coursesData } = await supabase
+          .from('courses')
+          .select('id, code, effective_sks');
+        if (coursesData && Array.isArray(coursesData)) {
+          for (const c of coursesData) {
+            if (c.id && typeof c.effective_sks === 'number') {
+              coursesMap.set(c.id, c.effective_sks);
+            }
+            if (c.code && typeof c.effective_sks === 'number') {
+              coursesMap.set(String(c.code).trim().toUpperCase(), c.effective_sks);
+            }
+          }
+        }
+      } catch (cErr) {
+        console.warn('Courses lookup warning:', cErr);
+      }
+
+      // 2. Query published schedule view
       let query = supabase.from('current_published_schedule').select('*');
 
       if (filters?.day && filters.day !== 'all') {
@@ -102,12 +115,141 @@ export const schedulesService = {
       }
 
       const { data, error } = await query;
-      if (error) {
-        console.warn('View current_published_schedule query error (may be empty view):', error);
-        return [];
+      let rawRows = data || [];
+
+      // 3. Fallback: If view is empty, check published schedule_version in schedule_versions
+      if (rawRows.length === 0) {
+        try {
+          const { data: pubVersion } = await supabase
+            .from('schedule_versions')
+            .select('id, academic_term_id, term_id')
+            .eq('status', 'PUBLISHED')
+            .order('published_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (pubVersion?.id) {
+            const { data: entries } = await supabase
+              .from('schedule_entries')
+              .select(`
+                *,
+                room:room_id ( id, code, name, capacity, room_type ),
+                course_offering:course_offering_id (
+                  id,
+                  class_code,
+                  expected_students,
+                  course:course_id ( id, name, code, effective_sks, semester, category, kbk_id )
+                )
+              `)
+              .eq('schedule_version_id', pubVersion.id)
+              .order('day_of_week', { ascending: true })
+              .order('start_minute', { ascending: true });
+
+            if (entries && entries.length > 0) {
+              rawRows = entries.map((e: any) => ({
+                id: e.id,
+                term_id: pubVersion.academic_term_id || pubVersion.term_id,
+                course_id: e.course_offering?.course?.id || e.course_id,
+                course_code: e.course_offering?.course?.code || e.course_code,
+                course_name: e.course_offering?.course?.name || e.course_name,
+                class_name: e.course_offering?.class_code || e.class_code || 'A',
+                day_of_week: e.day_of_week,
+                start_minute: e.start_minute,
+                end_minute: e.end_minute,
+                session_count: e.session_count,
+                effective_sks: e.course_offering?.course?.effective_sks,
+                room_id: e.room_id,
+                room_code: e.room?.code,
+                room_name: e.room?.name,
+                lecturer_names: e.lecturer_names,
+                course_offering: e.course_offering,
+              }));
+            }
+          }
+        } catch (fbErr) {
+          console.warn('Fallback published entries error:', fbErr);
+        }
       }
 
-      return data || [];
+      return rawRows.map((row: any) => {
+        const dayStr =
+          row.day ||
+          (row.day_of_week ? DAY_NAMES[Number(row.day_of_week)] : 'Senin') ||
+          'Senin';
+
+        const startMin =
+          typeof row.start_minute === 'number'
+            ? row.start_minute
+            : row.start_time
+            ? timeToMinute(row.start_time)
+            : 470;
+
+        let endMin =
+          typeof row.end_minute === 'number'
+            ? row.end_minute
+            : row.end_time
+            ? timeToMinute(row.end_time)
+            : startMin + 150;
+
+        if (endMin <= startMin) {
+          endMin = startMin + 150;
+        }
+
+        const durationMinutes = endMin - startMin;
+        const calculatedSessionCount = Math.max(1, Math.round(durationMinutes / 50));
+        const sessionCount =
+          typeof row.session_count === 'number' && row.session_count > 0
+            ? row.session_count
+            : calculatedSessionCount;
+
+        // Effective SKS resolution from coursesMap, relation, or duration calculation
+        const cCodeKey = String(row.course_code || '').trim().toUpperCase();
+        const effectiveSksFromMap =
+          (row.course_id && coursesMap.get(row.course_id)) ||
+          (cCodeKey && coursesMap.get(cCodeKey));
+
+        const effectiveSks =
+          row.course_offering?.course?.effective_sks ??
+          effectiveSksFromMap ??
+          row.effective_sks ??
+          sessionCount ??
+          calculatedSessionCount;
+
+        const startStr = row.start_time || minuteToTime(startMin);
+        const endStr = row.end_time || minuteToTime(endMin);
+
+        return {
+          ...row,
+          id: String(row.id || Math.random()),
+          term_id: String(row.term_id || row.academic_term_id || ''),
+          course_id: String(row.course_id || ''),
+          course_code: String(row.course_code || ''),
+          course_name: String(row.course_name || 'Mata Kuliah'),
+          sks: Number(effectiveSks),
+          effective_sks: Number(effectiveSks),
+          session_count: Number(sessionCount),
+          start_minute: Number(startMin),
+          end_minute: Number(endMin),
+          day_of_week: Number(
+            row.day_of_week ||
+              (row.day
+                ? Object.entries(DAY_NAMES).find(
+                    ([_, v]) => v.toLowerCase() === String(row.day).toLowerCase()
+                  )?.[0]
+                : 1) ||
+              1
+          ),
+          class_name: String(row.class_name || row.class_code || 'A'),
+          day: dayStr,
+          start_time: startStr,
+          end_time: endStr,
+          room_id: String(row.room_id || ''),
+          room_code: String(row.room_code || row.room_name || 'Ruang ?'),
+          room_name: String(row.room_name || row.room_code || 'Ruang ?'),
+          lecturer_names: row.lecturer_names || '',
+          kbk_name: row.kbk_name || '',
+        };
+      });
     } catch (err) {
       console.error('Error fetching published schedule:', err);
       return [];

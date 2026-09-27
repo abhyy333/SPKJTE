@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Calendar,
   CalendarCheck,
+  CalendarPlus,
   BookOpen,
   Users,
   GraduationCap,
@@ -213,6 +214,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                 )}
                 <div className="space-y-1">
                   {renderNavLinks([
+                    { label: 'Penyusunan Jadwal', path: '/penyusunan-jadwal', icon: <CalendarPlus className="w-5 h-5" /> },
                     { label: 'Jadwal Perkuliahan', path: '/jadwal-perkuliahan', icon: <Calendar className="w-5 h-5" /> },
                     { label: 'Jadwal Ujian', path: '/jadwal-ujian', icon: <CalendarCheck className="w-5 h-5" /> },
                   ])}

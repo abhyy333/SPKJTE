@@ -97,7 +97,6 @@ export const roomsService = {
       room_type: data.room_type || 'Ruang Kuliah Teori',
       facilities: data.facilities?.trim() || null,
       is_active: data.is_active ?? true,
-      building: data.building?.trim() || 'Gedung E',
     };
 
     const { data: created, error } = await supabase
@@ -148,7 +147,6 @@ export const roomsService = {
       room_type: data.room_type || 'Ruang Kuliah Teori',
       facilities: data.facilities?.trim() || null,
       is_active: data.is_active ?? true,
-      building: data.building?.trim() || 'Gedung E',
     };
 
     const { data: updated, error } = await supabase

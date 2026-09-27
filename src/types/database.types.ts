@@ -20,6 +20,7 @@ export interface Profile {
   id: string;
   role: UserRole;
   name: string;
+  full_name?: string;
   email?: string;
   avatar_url?: string | null;
   preview_roles?: UserRole[] | null;
@@ -69,6 +70,9 @@ export interface Lecturer {
   nip?: string | null;
   nidn?: string | null;
   kbk_id?: string | null;
+  expertise?: string | null;
+  availability_days?: any;
+  preferred_time?: any;
   email?: string | null;
   phone?: string | null;
   room_office?: string | null;
@@ -230,6 +234,7 @@ export interface ScheduleVersion {
   type?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'REPLACED' | string;
   revision: number;
+  scope_offering_ids?: string[] | null;
   created_at: string;
   updated_at?: string;
   published_at?: string | null;
@@ -290,6 +295,14 @@ export interface CurrentPublishedSchedule {
   room_name: string;
   lecturer_names: string | string[];
   kbk_name?: string;
+  // Enhanced duration & relations fields
+  start_minute?: number;
+  end_minute?: number;
+  session_count?: number;
+  effective_sks?: number;
+  day_of_week?: number;
+  course_offering_id?: string;
+  course_offering?: any;
 }
 
 export interface ScheduleConflict {
@@ -357,4 +370,152 @@ export interface LecturerCourseAssignment {
   academic_year?: string | null;
   semester_type?: 'GANJIL' | 'GENAP' | string | null;
 }
+
+export interface CurriculumPackageCourse {
+  code: string;
+  name: string;
+  sks: number;
+  order: number;
+  source_names?: string[];
+  source_sheets?: string[];
+}
+
+export interface CurriculumPackagePayload {
+  curriculum_year: number; // e.g. 2022 | 2026
+  semester?: number | null; // e.g. 1..8
+  scope?: string;
+  kbk_code?: string | null; // 'STL' | 'KOMPUTER' | 'ELKOM'
+  kbk_name?: string | null;
+  legacy_track?: string | null; // 'TELEKOMUNIKASI' | 'ELEKTRONIKA'
+  package_type?: string; // 'SEMESTER_REGULER' | 'ELECTIVE_CATALOG'
+  course_count?: number;
+  total_sks?: number;
+  courses: CurriculumPackageCourse[];
+  [key: string]: any;
+}
+
+export interface CurriculumPackage {
+  id: string;
+  curriculum_id?: string | null;
+  legacy_id?: string | null;
+  name: string;
+  payload: CurriculumPackagePayload;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlannedCourse {
+  selectionKey: string; // `${packageId}:${course.code}`
+  packageId: string;
+  packageName: string;
+  courseCode: string;
+  courseName: string;
+  sks: number;
+  semester: number;
+  curriculumYear: number;
+  kbkCode?: string | null;
+  kbkName?: string | null;
+  legacyTrack?: string | null;
+  category?: string;
+  totalParticipants: number;
+}
+
+export interface CourseOfferingRombelItem {
+  id: string; // course_offering.id
+  academic_term_id: string;
+  course_id: string;
+  class_code: string;
+  effective_sks: number;
+  expected_students: number;
+  required_room_type?: string | null;
+  assignment_confirmed?: boolean;
+  active: boolean;
+  currentParticipants: number;
+  targetRoomCapacity?: number | null;
+  seatWaste?: number;
+  isOversized?: boolean;
+}
+
+export interface CourseRombelGroup {
+  selectionKey: string;
+  packageId: string;
+  packageName: string;
+  courseId?: string | null;
+  courseCode: string;
+  courseName: string;
+  semester: number;
+  curriculumYear: number;
+  sks: number;
+  category?: string;
+  requiredRoomType: string;
+  totalParticipantsStep1: number;
+  offerings: CourseOfferingRombelItem[];
+  totalDistributed: number;
+  remaining: number;
+  maxEligibleCapacity: number;
+  eligibleCapacities: number[];
+  minimumSections: number;
+  totalSeatWaste: number;
+  hasOversizedOffering: boolean;
+  status: 'LENGKAP' | 'KURANG' | 'LEBIH' | 'TIDAK_FEASIBLE' | 'TIDAK_ADA_KELAS';
+}
+
+export interface RombelOfferingDraft {
+  active: boolean;
+  expectedStudents: number;
+  targetRoomCapacity?: number | null;
+}
+
+export interface Step3LecturerItem {
+  lecturerId: string;
+  lecturerName: string;
+  lecturerCode: string;
+  nip?: string | null;
+  kbkId?: string | null;
+  expertise?: string | null;
+  status?: string | null;
+  availabilityDays?: any;
+  preferredTime?: any;
+  assignmentRole: 'PENGAMPU' | 'KOORDINATOR' | string;
+  isLecturerMissing: boolean;
+  isLecturerInactive: boolean;
+  sourceRowId?: string | null;
+}
+
+export interface Step3OfferingLecturerRow {
+  offeringId: string;
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  classCode: string;
+  semester: number;
+  curriculumYear: number;
+  effectiveSks: number;
+  expectedStudents: number;
+  requiredRoomType: string;
+  targetRoomCapacity?: number | null;
+  // Candidates & Selected Primary Lecturer (EXACTLY 1 PRIMARY)
+  primaryLecturer: Step3LecturerItem | null;
+  primaryLecturerId: string | null;
+  candidates: Step3LecturerItem[];
+  pengampuList: Step3LecturerItem[];
+  koordinatorList: Step3LecturerItem[];
+  lecturers: Step3LecturerItem[];
+  hasMultipleCandidates: boolean;
+  totalCandidates: number;
+  isManuallySelected: boolean;
+  status:
+    | 'SIAP'
+    | 'PILIH_DOSEN'
+    | 'BELUM_ADA_PENGAMPU'
+    | 'DOSEN_TIDAK_AKTIF'
+    | 'DOSEN_TIDAK_DITEMUKAN';
+  hasPengampu: boolean;
+  isTeamTeaching?: boolean; // legacy helper
+  hasInactiveLecturer: boolean;
+  hasMissingLecturer: boolean;
+  isValid: boolean;
+}
+
+
 

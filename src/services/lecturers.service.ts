@@ -379,11 +379,19 @@ export const lecturersService = {
     }
 
     try {
-      const { data: lecturers, error } = await supabase
-        .from('lecturers')
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'lecturers' : 'guest_lecturers';
+
+      let { data: lecturers, error } = await supabase
+        .from(table)
         .select('id, status');
 
-      if (error) throw error;
+      if (error) {
+        const guestRes = await supabase
+          .from('guest_lecturers')
+          .select('id, status');
+        lecturers = guestRes.data || [];
+      }
 
       const list = lecturers || [];
       const total = list.length;
@@ -393,7 +401,7 @@ export const lecturersService = {
 
       return { total, active, highLoad, available };
     } catch (err) {
-      console.error('Failed to get lecturer stats:', err);
+      console.warn('Failed to get lecturer stats:', err);
       return { total: 0, active: 0, highLoad: 0, available: 0 };
     }
   },

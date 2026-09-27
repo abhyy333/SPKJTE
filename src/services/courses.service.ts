@@ -409,15 +409,29 @@ export const coursesService = {
     }
 
     try {
-      const { data: courses, error } = await supabase
-        .from('courses')
+      const isOwner = await verifyOwnerAdmin();
+      const table = isOwner ? 'courses' : 'guest_courses';
+
+      let { data: courses, error } = await supabase
+        .from(table)
         .select('id, course_type, is_schedulable, activity_type, metadata');
 
-      if (error) throw error;
+      if (error) {
+        const guestRes = await supabase
+          .from('guest_courses')
+          .select('id, course_type, is_schedulable, activity_type, metadata');
+        courses = guestRes.data || [];
+      }
 
-      const { count: classesCount } = await supabase
-        .from('course_offerings')
-        .select('*', { count: 'exact', head: true });
+      let classesCount = 0;
+      try {
+        const { count } = await supabase
+          .from('course_offerings')
+          .select('*', { count: 'exact', head: true });
+        classesCount = count || 0;
+      } catch {
+        // ignore
+      }
 
       // Master catalog filter: only count metadata->>'master_catalog' = 'true'
       const masterCourses = (courses || []).filter(
@@ -438,7 +452,7 @@ export const coursesService = {
         totalClasses: classesCount || 0,
       };
     } catch (err) {
-      console.error('Failed to get course stats:', err);
+      console.warn('Failed to get course stats:', err);
       return { total: 0, schedulable: 0, wajib: 0, pilihan: 0, totalClasses: 0 };
     }
   },

@@ -26,6 +26,7 @@ import { coursesService } from '../../services/courses.service';
 import { lecturersService } from '../../services/lecturers.service';
 import { schedulesService } from '../../services/schedules.service';
 import { conflictsService } from '../../services/conflicts.service';
+import { useAcademicTerm } from '../../contexts/AcademicTermContext';
 import {
   CurrentPublishedSchedule,
   ScheduleConflict,
@@ -35,8 +36,16 @@ import {
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { activeTerm: globalActiveTerm } = useAcademicTerm();
   const [loading, setLoading] = useState(true);
-  const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(null);
+  const [activeTerm, setActiveTerm] = useState<AcademicTerm | null>(globalActiveTerm);
+
+  // Sync global active term
+  useEffect(() => {
+    if (globalActiveTerm) {
+      setActiveTerm(globalActiveTerm);
+    }
+  }, [globalActiveTerm]);
 
   // Stats
   const [courseStats, setCourseStats] = useState({ total: 0, schedulable: 0, totalClasses: 0 });
@@ -78,7 +87,7 @@ export const AdminDashboard: React.FC = () => {
           setLecturerStats(lStats);
           setConflictStats(confStats);
           setScheduleStatus(sStatus);
-          setActiveTerm(term);
+          if (term) setActiveTerm(term);
           setSchedule(pubSchedule);
           setConflicts(confList.slice(0, 5));
           setSuggestions(suggList.slice(0, 4));
