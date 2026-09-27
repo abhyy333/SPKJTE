@@ -78,12 +78,21 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         title={collapsed ? item.label : undefined}
         className={({ isActive }) =>
           cn(
-            'flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group relative',
-            indent && !collapsed && 'pl-4',
+            'flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all group relative',
+            indent && !collapsed && 'pl-5',
             isActive
-              ? 'bg-blue-50 text-blue-600 font-semibold shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              ? 'text-blue-700 font-semibold shadow-[0_2px_8px_rgba(59,130,246,0.06)]'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           )
+        }
+        style={({ isActive }) =>
+          isActive
+            ? {
+                background: 'rgba(219, 234, 254, 0.72)',
+                border: '1px solid rgba(147, 197, 253, 0.32)',
+                backdropFilter: 'blur(12px)',
+              }
+            : undefined
         }
       >
         {({ isActive }) => (
@@ -91,12 +100,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <span
               className={cn(
                 'transition-colors shrink-0',
-                isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
+                isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700'
               )}
             >
               {item.icon}
             </span>
-            {!collapsed && <span className="truncate tracking-tight">{item.label}</span>}
+            {!collapsed && <span className="truncate tracking-tight font-medium">{item.label}</span>}
             {collapsed && (
               <div className="fixed left-20 ml-2 px-2.5 py-1 bg-slate-900 text-white text-xs rounded-md shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap">
                 {item.label}
@@ -113,21 +122,28 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-xs lg:hidden"
           onClick={onCloseMobile}
         />
       )}
 
-      {/* Sidebar container */}
+      {/* Sidebar container with macOS glass surface */}
       <aside
         className={cn(
-          'fixed top-0 bottom-0 left-0 z-40 bg-white border-r border-slate-200/90 flex flex-col transition-all duration-200 ease-in-out select-none',
-          collapsed ? 'w-20' : 'w-64',
+          'fixed top-0 bottom-0 left-0 z-40 flex flex-col transition-all duration-200 ease-in-out select-none',
+          collapsed ? 'w-20' : 'w-[232px]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
+        style={{
+          background: 'rgba(255, 255, 255, 0.62)',
+          backdropFilter: 'blur(28px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(160%)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.72)',
+          boxShadow: '4px 0 24px rgba(15, 23, 42, 0.02)',
+        }}
       >
         {/* Brand Header */}
-        <div className="h-16 px-4 flex items-center gap-3 border-b border-slate-100 shrink-0">
+        <div className="h-16 px-4 flex items-center gap-3 border-b border-white/60 shrink-0">
           <div
             className="shrink-0 cursor-pointer"
             onClick={() =>
@@ -204,7 +220,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               </div>
 
               {/* 2. Jadwal Section */}
-              <div className="pt-2 border-t border-slate-100">
+              <div className="pt-2 border-t border-white/60">
                 {!collapsed ? (
                   <div className="px-3 pb-1.5 text-3xs font-bold text-slate-400 uppercase tracking-wider">
                     Jadwal
@@ -222,12 +238,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               </div>
 
               {/* 3. MASTER DATA Group (Header/Toggle Only - NO ROUTE, NO NAVIGATION) */}
-              <div className="pt-2 border-t border-slate-100">
+              <div className="pt-2 border-t border-white/60">
                 {!collapsed ? (
                   <button
                     type="button"
                     onClick={toggleMasterData}
-                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer group"
+                    className="w-full flex items-center justify-between px-3.5 py-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-white/50 transition-colors cursor-pointer group"
                     title="Buka / Tutup Menu Master Data"
                   >
                     <span className="flex items-center gap-2 text-3xs font-bold uppercase tracking-wider text-slate-400 group-hover:text-slate-600">
@@ -262,7 +278,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               </div>
 
               {/* 4. Monitoring Section */}
-              <div className="pt-2 border-t border-slate-100">
+              <div className="pt-2 border-t border-white/60">
                 {!collapsed ? (
                   <div className="px-3 pb-1.5 text-3xs font-bold text-slate-400 uppercase tracking-wider">
                     Monitoring

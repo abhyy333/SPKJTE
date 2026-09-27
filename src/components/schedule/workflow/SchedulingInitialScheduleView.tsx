@@ -32,6 +32,8 @@ import {
 import { Room } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { toast } from '../../ui/Toast';
+import { AppleWeeklyCalendar } from '../../schedule/AppleWeeklyCalendar';
+import { AppleScheduleCardData } from '../../schedule/AppleScheduleCard';
 
 interface SchedulingInitialScheduleViewProps {
   entries: InitialScheduleEntry[];
@@ -60,8 +62,9 @@ export const SchedulingInitialScheduleView: React.FC<SchedulingInitialScheduleVi
   onBackToStep3,
   onContinueToStep5,
 }) => {
-  // View mode: Table List vs Timetable Grid
-  const [viewMode, setViewMode] = useState<'TABLE' | 'GRID'>('TABLE');
+  // View mode: Table List vs Timetable Grid (Default to GRID per Apple Calendar focus)
+  const [viewMode, setViewMode] = useState<'TABLE' | 'GRID'>('GRID');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -152,6 +155,30 @@ export const SchedulingInitialScheduleView: React.FC<SchedulingInitialScheduleVi
       list.sort((a, b) => a.startMinute - b.startMinute || a.roomCode.localeCompare(b.roomCode));
     });
     return map;
+  }, [filteredEntries]);
+
+  // Convert filteredEntries to AppleScheduleCardData for AppleWeeklyCalendar
+  const calendarEntries: AppleScheduleCardData[] = useMemo(() => {
+    return filteredEntries.map((e) => ({
+      id: e.courseOfferingId,
+      course_name: e.offering.courseName,
+      course_code: e.offering.courseCode,
+      class_name: e.offering.classCode,
+      start_time: e.startTime,
+      end_time: e.endTime,
+      room_code: e.roomCode,
+      room_name: e.roomName,
+      lecturer_names: e.offering.primaryLecturerName,
+      sks: e.offering.effectiveSks,
+      isConflict: e.conflicts.length > 0,
+      conflictReason: e.conflicts[0]?.title || 'Bentrok Terdeteksi',
+      raw: {
+        ...e,
+        day_of_week: e.dayOfWeek,
+        start_minute: e.startMinute,
+        end_minute: e.endMinute,
+      },
+    }));
   }, [filteredEntries]);
 
   return (
@@ -713,91 +740,21 @@ export const SchedulingInitialScheduleView: React.FC<SchedulingInitialScheduleVi
           </div>
         </div>
       ) : (
-        /* GRID VIEW (Timetable by Day) */
+        /* GRID VIEW: Apple Weekly Translucent Glass Calendar */
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5">
-            {daysList.map((day) => {
-              const dayEntries = entriesByDay.get(day.num) || [];
-              return (
-                <div
-                  key={day.num}
-                  className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs flex flex-col"
-                >
-                  {/* Day Header */}
-                  <div className="bg-slate-50 border-b border-slate-200 p-3 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-xs">{day.name}</h4>
-                      <p className="text-3xs text-slate-400 font-medium">{dayEntries.length} Sesi Terjadwal</p>
-                    </div>
-                    <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-800 font-bold text-xs flex items-center justify-center">
-                      {day.num}
-                    </span>
-                  </div>
-
-                  {/* Day Classes */}
-                  <div className="p-2 space-y-2 flex-1 max-h-[520px] overflow-y-auto">
-                    {dayEntries.length === 0 ? (
-                      <div className="py-8 text-center text-slate-300 text-3xs italic">
-                        Tidak ada perkuliahan pada hari ini.
-                      </div>
-                    ) : (
-                      dayEntries.map((e) => {
-                        const hasConflict = e.conflicts.length > 0;
-                        return (
-                          <div
-                            key={e.courseOfferingId}
-                            className={cn(
-                              'p-2.5 rounded-xl border text-xs space-y-1.5 transition-all shadow-2xs',
-                              hasConflict
-                                ? 'bg-amber-50/70 border-amber-200 hover:border-amber-300'
-                                : 'bg-slate-50/60 border-slate-200 hover:border-slate-300'
-                            )}
-                          >
-                            {/* Time & Room */}
-                            <div className="flex items-center justify-between text-3xs font-semibold">
-                              <span className="inline-flex items-center gap-1 font-mono text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                <Clock className="w-2.5 h-2.5 text-blue-600" />
-                                {e.startTime} - {e.endTime}
-                              </span>
-                              <span className="inline-flex items-center gap-1 font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                <DoorOpen className="w-2.5 h-2.5 text-indigo-600" />
-                                {e.roomCode}
-                              </span>
-                            </div>
-
-                            {/* Course & Class */}
-                            <div>
-                              <div className="flex items-center gap-1">
-                                <span className="font-mono text-3xs font-bold text-blue-600 bg-blue-50 px-1 rounded">
-                                  {e.offering.classCode}
-                                </span>
-                                <p className="font-bold text-slate-900 text-xs line-clamp-1">
-                                  {e.offering.courseName}
-                                </p>
-                              </div>
-                              <p className="text-3xs text-slate-400 pl-4">{e.offering.effectiveSks} SKS • Smt {e.offering.semester}</p>
-                            </div>
-
-                            {/* Single Lecturer */}
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-3xs">
-                              <span className="font-medium text-slate-700 truncate max-w-[130px]" title={e.offering.primaryLecturerName}>
-                                {e.offering.primaryLecturerName}
-                              </span>
-                              {hasConflict && (
-                                <span className="text-amber-700 font-bold bg-amber-100 px-1 rounded shrink-0">
-                                  Bentrok
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <AppleWeeklyCalendar
+            title="Matriks Jadwal Awal"
+            subtitle="Tinjau hasil plotting jadwal awal. Kelas dengan bentrok ditandai dengan aksen merah/rose."
+            entries={calendarEntries}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onSelectEntry={(entry) => {
+              if (entry.raw) {
+                setSelectedEntry(entry.raw);
+              }
+            }}
+            onResetThisWeek={() => setSelectedDate(new Date())}
+          />
         </div>
       )}
 

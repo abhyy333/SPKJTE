@@ -18,7 +18,14 @@ export const AppLayout: React.FC = () => {
   const configured = isSupabaseConfigured();
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col text-slate-800">
+    <div className="min-h-screen bg-transparent flex flex-col text-slate-800 relative">
+      {/* Subtle Ambient Background Highlight for Translucent Glass Interface */}
+      <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden select-none">
+        <div className="absolute top-[-5%] left-[20%] w-[650px] h-[650px] bg-blue-100/35 rounded-full blur-3xl" />
+        <div className="absolute top-[35%] right-[-5%] w-[550px] h-[550px] bg-indigo-100/25 rounded-full blur-3xl" />
+        <div className="absolute bottom-[-10%] left-[35%] w-[600px] h-[600px] bg-sky-100/25 rounded-full blur-3xl" />
+      </div>
+
       {/* Sidebar */}
       <AppSidebar
         collapsed={collapsed}
@@ -31,7 +38,7 @@ export const AppLayout: React.FC = () => {
       <div
         className={cn(
           'flex-1 flex flex-col min-w-0 transition-all duration-200 ease-in-out',
-          collapsed ? 'lg:pl-20' : 'lg:pl-64'
+          collapsed ? 'lg:pl-20' : 'lg:pl-[232px]'
         )}
       >
         {/* Topbar */}
@@ -42,7 +49,7 @@ export const AppLayout: React.FC = () => {
 
         {/* Database Not Configured Banner */}
         {!configured && (
-          <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 sm:px-6">
+          <div className="bg-amber-50/90 border-b border-amber-200 px-4 py-3 sm:px-6 backdrop-blur-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-7xl mx-auto">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
@@ -69,7 +76,7 @@ export const AppLayout: React.FC = () => {
         )}
 
         {/* Page Content with ErrorBoundary protection */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-8 max-w-7xl w-full mx-auto min-w-0">
+        <main className="flex-1 p-3 sm:p-5 lg:p-6 max-w-[1720px] w-full mx-auto min-w-0">
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>

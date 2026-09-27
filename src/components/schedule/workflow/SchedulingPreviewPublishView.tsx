@@ -49,6 +49,8 @@ import { schedulingOptimizationService } from '../../../services/schedulingOptim
 import { minuteToTime, timeToMinute, dayOfWeekToName, cn, parseSupabaseError } from '../../../lib/utils';
 import { toast } from '../../ui/Toast';
 import { useNavigate } from 'react-router-dom';
+import { AppleWeeklyCalendar } from '../../schedule/AppleWeeklyCalendar';
+import { AppleScheduleCardData } from '../../schedule/AppleScheduleCard';
 
 interface SchedulingPreviewPublishViewProps {
   entries: InitialScheduleEntry[];
@@ -101,6 +103,7 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
 
   // View modes: MATRIKS_HARI, MATRIKS_RUANGAN, TABEL_DAFTAR
   const [viewMode, setViewMode] = useState<'MATRIKS_HARI' | 'MATRIKS_RUANGAN' | 'TABEL_DAFTAR'>('MATRIKS_HARI');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -384,6 +387,30 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
     selectedLecturerFilter,
     searchQuery,
   ]);
+
+  // Convert filteredEntries to AppleScheduleCardData for AppleWeeklyCalendar
+  const calendarEntries: AppleScheduleCardData[] = useMemo(() => {
+    return filteredEntries.map((entry) => ({
+      id: entry.courseOfferingId,
+      course_name: entry.offering.courseName,
+      course_code: entry.offering.courseCode,
+      class_name: entry.offering.classCode,
+      start_time: entry.startTime,
+      end_time: entry.endTime,
+      room_code: entry.roomCode,
+      room_name: entry.roomName,
+      lecturer_names: entry.offering.primaryLecturerName,
+      sks: entry.offering.effectiveSks,
+      isConflict: conflictedOfferingIds.has(entry.courseOfferingId),
+      conflictReason: 'Bentrok Terdeteksi',
+      raw: {
+        ...entry,
+        day_of_week: entry.dayOfWeek,
+        start_minute: entry.startMinute,
+        end_minute: entry.endMinute,
+      },
+    }));
+  }, [filteredEntries, conflictedOfferingIds]);
 
   // Semester badge colors
   const getSemesterColorClass = (semester: number) => {
@@ -1423,132 +1450,22 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
       {/* 4. Main Timetable Views */}
       {viewMode === 'MATRIKS_HARI' ? (
         /* ========================================================================= */
-        /* MODE 1: MATRIKS HARI (CSS Grid with vertical duration spanning) */
+        /* MODE 1: MATRIKS HARI (Apple Weekly Translucent Glass Calendar)            */
         /* ========================================================================= */
-        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto min-w-full">
-            <div className="min-w-[960px]">
-              {/* CSS Grid Timetable Container */}
-              <div
-                className="grid"
-                style={{
-                  gridTemplateColumns: '120px repeat(5, minmax(160px, 1fr))',
-                  gridTemplateRows: '48px repeat(12, minmax(80px, auto))',
-                }}
-              >
-                {/* Top-Left Header Cell */}
-                <div className="sticky top-0 z-10 bg-slate-900 text-slate-200 text-3xs font-bold uppercase tracking-wider p-3 flex items-center justify-center border-b border-r border-slate-800">
-                  SESI / HARI
-                </div>
-
-                {/* Day Columns Header (Navy Header) */}
-                {daysList.map((day, idx) => (
-                  <div
-                    key={day.num}
-                    className="sticky top-0 z-10 bg-slate-900 text-white text-xs font-bold uppercase tracking-wider p-3 flex items-center justify-between border-b border-r border-slate-800"
-                    style={{ gridColumn: idx + 2, gridRow: 1 }}
-                  >
-                    <span>{day.name}</span>
-                    <span className="text-3xs px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 font-semibold">
-                      {entries.filter((e) => e.dayOfWeek === day.num).length} MK
-                    </span>
-                  </div>
-                ))}
-
-                {/* Session Row Labels (Left Column) */}
-                {standardSessions.map((session, sIdx) => (
-                  <div
-                    key={session.num}
-                    className="bg-slate-50/90 text-slate-600 p-2.5 flex flex-col justify-center items-center text-center border-b border-r border-slate-200"
-                    style={{ gridColumn: 1, gridRow: sIdx + 2 }}
-                  >
-                    <span className="text-3xs font-extrabold uppercase text-slate-700 tracking-wider">
-                      SESI {session.num}
-                    </span>
-                    <span className="text-3xs font-mono font-semibold text-slate-500 mt-0.5">
-                      {session.label}
-                    </span>
-                    <span className="text-4xs text-slate-400">50 menit</span>
-                  </div>
-                ))}
-
-                {/* Grid Slot Background Cells (Empty Grid Lines) */}
-                {standardSessions.map((_, sIdx) =>
-                  daysList.map((_, dIdx) => (
-                    <div
-                      key={`bg-${sIdx}-${dIdx}`}
-                      className="border-b border-r border-slate-100 bg-white"
-                      style={{ gridColumn: dIdx + 2, gridRow: sIdx + 2 }}
-                    />
-                  ))
-                )}
-
-                {/* Schedule Cards: EXACTLY ONE CARD PER ENTRY WITH VERTICAL SPAN */}
-                {filteredEntries.map((entry) => {
-                  const startRow = getSessionRowStart(entry.startMinute);
-                  const dayCol = entry.dayOfWeek + 1; // Col 1 is session label
-                  const span = Math.max(1, entry.sessionCount || entry.offering.effectiveSks || 2);
-                  const hasConflict = conflictedOfferingIds.has(entry.courseOfferingId);
-
-                  return (
-                    <div
-                      key={entry.courseOfferingId}
-                      onClick={() => handleOpenDetail(entry)}
-                      className={cn(
-                        'm-1 p-2.5 rounded-xl border flex flex-col justify-between transition-all cursor-pointer shadow-xs hover:shadow-md hover:scale-[1.01] group z-2',
-                        hasConflict
-                          ? 'bg-rose-50/95 border-rose-300 ring-2 ring-rose-400 text-rose-900'
-                          : getSemesterColorClass(entry.offering.semester)
-                      )}
-                      style={{
-                        gridColumn: dayCol,
-                        gridRow: `${startRow} / span ${span}`,
-                      }}
-                    >
-                      {/* Card Top: Title & Class */}
-                      <div className="space-y-1">
-                        <div className="flex items-start justify-between gap-1">
-                          <h4 className="text-xs font-bold leading-tight group-hover:text-blue-700 transition-colors">
-                            {entry.offering.courseName}
-                          </h4>
-                          <span className="px-1.5 py-0.2 rounded text-3xs font-extrabold bg-blue-600 text-white shrink-0">
-                            {entry.offering.classCode}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 text-3xs opacity-80 font-medium">
-                          <span>Sem {entry.offering.semester}</span>
-                          <span>•</span>
-                          <span>{entry.offering.effectiveSks} SKS</span>
-                          <span>•</span>
-                          <span>{entry.offering.expectedStudents} mhs</span>
-                        </div>
-                      </div>
-
-                      {/* Card Bottom: Lecturer, Time, Room */}
-                      <div className="space-y-1 mt-2 pt-2 border-t border-slate-200/60 text-3xs">
-                        <div className="flex items-center gap-1 text-slate-800 font-semibold truncate">
-                          <UserCheck className="w-3 h-3 text-slate-500 shrink-0" />
-                          <span className="truncate">{entry.offering.primaryLecturerName}</span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-slate-600 font-mono">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-slate-400 shrink-0" />
-                            {entry.startTime} – {entry.endTime}
-                          </span>
-                          <span className="flex items-center gap-1 font-bold text-slate-800">
-                            <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                            {entry.roomCode}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        <div className="space-y-4">
+          <AppleWeeklyCalendar
+            title="Pratinjau Jadwal Kuliah"
+            subtitle="Tinjau draf jadwal perkuliahan sebelum dipublikasikan secara resmi ke seluruh civitas akademika."
+            entries={calendarEntries}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onSelectEntry={(card) => {
+              if (card.raw) {
+                handleOpenDetail(card.raw);
+              }
+            }}
+            onResetThisWeek={() => setSelectedDate(new Date())}
+          />
         </div>
       ) : viewMode === 'MATRIKS_RUANGAN' ? (
         /* ========================================================================= */

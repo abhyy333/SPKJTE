@@ -108,11 +108,20 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200/90 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 min-w-0">
+      <header
+        className="h-16 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 min-w-0"
+        style={{
+          background: 'rgba(255, 255, 255, 0.68)',
+          backdropFilter: 'blur(24px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.72)',
+          boxShadow: '0 2px 16px rgba(15, 23, 42, 0.02)',
+        }}
+      >
         {/* Mobile menu trigger */}
         <button
           onClick={onOpenMobileSidebar}
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 lg:hidden cursor-pointer shrink-0"
+          className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-white/60 lg:hidden cursor-pointer shrink-0"
           aria-label="Buka menu"
         >
           <Menu className="w-5 h-5" />
@@ -122,13 +131,17 @@ export const AppTopbar: React.FC<AppTopbarProps> = ({
         <div className="flex-1 max-w-xl min-w-0">
           <div
             onClick={onOpenSearch}
-            className="w-full flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200/90 rounded-xl cursor-pointer text-slate-400 text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500/20"
+            className="w-full flex items-center gap-2 sm:gap-3 px-3 py-1.5 sm:py-2 rounded-xl cursor-pointer text-slate-400 text-sm transition-all focus-within:ring-2 focus-within:ring-blue-500/20"
+            style={{
+              background: 'rgba(255, 255, 255, 0.7)',
+              border: '1px solid rgba(226, 232, 240, 0.8)',
+            }}
           >
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
             <span className="truncate text-slate-500 text-xs sm:text-sm">
               Cari mata kuliah, dosen, ruangan...
             </span>
-            <kbd className="hidden md:inline-flex items-center gap-0.5 px-2 py-0.5 text-2xs font-medium text-slate-500 bg-white border border-slate-200 rounded shadow-2xs shrink-0 ml-auto">
+            <kbd className="hidden md:inline-flex items-center gap-0.5 px-2 py-0.5 text-2xs font-medium text-slate-500 bg-white/80 border border-slate-200/80 rounded-md shadow-2xs shrink-0 ml-auto">
               Ctrl + K
             </kbd>
           </div>

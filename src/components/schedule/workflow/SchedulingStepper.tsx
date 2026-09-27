@@ -79,9 +79,18 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
   };
 
   return (
-    <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-4 shadow-2xs">
+    <div
+      className="w-full p-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.03)]"
+      style={{
+        background: 'rgba(255, 255, 255, 0.72)',
+        backdropFilter: 'blur(20px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(150%)',
+        border: '1px solid rgba(255, 255, 255, 0.85)',
+        borderRadius: '20px',
+      }}
+    >
       <div className="overflow-x-auto pb-1 -mb-1">
-        <ol className="flex items-center min-w-[760px] lg:min-w-full justify-between gap-2">
+        <ol className="flex items-center min-w-[760px] lg:min-w-full justify-between gap-1.5">
           {STEPS.map((step, idx) => {
             const isActive = step.number === currentStep;
             const isCompleted = step.number < currentStep;
@@ -94,7 +103,7 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
                     type="button"
                     onClick={() => handleStepClick(step.number)}
                     className={cn(
-                      'w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all group',
+                      'w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-all group',
                       isActive && 'bg-blue-50/80 border border-blue-200/80 shadow-2xs',
                       isCompleted && 'hover:bg-slate-50 cursor-pointer',
                       isLocked && 'cursor-not-allowed opacity-75 hover:opacity-90'
@@ -102,16 +111,16 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
                   >
                     <div
                       className={cn(
-                        'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold transition-colors',
+                        'w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold transition-colors',
                         isActive && 'bg-blue-600 text-white shadow-2xs shadow-blue-500/30',
                         isCompleted && 'bg-emerald-600 text-white',
                         isLocked && 'bg-slate-100 text-slate-400 group-hover:bg-slate-200/70'
                       )}
                     >
                       {isCompleted ? (
-                        <CheckCircle2 className="w-4 h-4" />
+                        <CheckCircle2 className="w-3.5 h-3.5" />
                       ) : isLocked ? (
-                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        <Lock className="w-3 h-3 text-slate-400" />
                       ) : (
                         step.icon
                       )}
@@ -120,14 +129,14 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
                       <div className="flex items-center gap-1.5">
                         <span
                           className={cn(
-                            'text-3xs font-bold uppercase tracking-wider',
+                            'text-4xs font-bold uppercase tracking-wider',
                             isActive ? 'text-blue-600' : isCompleted ? 'text-emerald-600' : 'text-slate-400'
                           )}
                         >
                           Tahap {step.number}
                         </span>
                         {isActive && (
-                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-3xs font-semibold bg-blue-100 text-blue-700">
+                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-4xs font-semibold bg-blue-100 text-blue-700">
                             Aktif
                           </span>
                         )}
@@ -141,14 +150,13 @@ export const SchedulingStepper: React.FC<SchedulingStepperProps> = ({
                       >
                         {step.title}
                       </p>
-                      <p className="text-3xs text-slate-400 truncate">{step.subtitle}</p>
                     </div>
                   </button>
                 </li>
                 {idx < STEPS.length - 1 && (
                   <div
                     className={cn(
-                      'hidden xl:block w-4 h-0.5 shrink-0 rounded-full mx-0.5',
+                      'hidden xl:block w-3 h-0.5 shrink-0 rounded-full mx-0.5',
                       step.number < currentStep ? 'bg-emerald-300' : 'bg-slate-200'
                     )}
                   />

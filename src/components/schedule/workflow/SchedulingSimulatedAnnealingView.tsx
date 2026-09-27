@@ -53,6 +53,8 @@ import {
 import { schedulingOptimizationService } from '../../../services/schedulingOptimization.service';
 import { cn } from '../../../lib/utils';
 import { toast } from '../../ui/Toast';
+import { AppleWeeklyCalendar } from '../../schedule/AppleWeeklyCalendar';
+import { AppleScheduleCardData } from '../../schedule/AppleScheduleCard';
 
 interface SchedulingSimulatedAnnealingViewProps {
   entries: InitialScheduleEntry[];
@@ -92,8 +94,9 @@ export const SchedulingSimulatedAnnealingView: React.FC<SchedulingSimulatedAnnea
   const [currentEntries, setCurrentEntries] = useState<InitialScheduleEntry[]>(entries);
   const [hasOptimized, setHasOptimized] = useState<boolean>(false);
 
-  // View mode
-  const [viewMode, setViewMode] = useState<'TABLE' | 'GRID'>('TABLE');
+  // View mode (Default to GRID per Apple Calendar focus)
+  const [viewMode, setViewMode] = useState<'TABLE' | 'GRID'>('GRID');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'ALL'>('ALL');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string | 'ALL'>('ALL');
@@ -248,6 +251,30 @@ export const SchedulingSimulatedAnnealingView: React.FC<SchedulingSimulatedAnnea
     selectedSemesterFilter,
     searchQuery,
   ]);
+
+  // Convert filteredEntries to AppleScheduleCardData for AppleWeeklyCalendar
+  const calendarEntries: AppleScheduleCardData[] = useMemo(() => {
+    return filteredEntries.map((e) => ({
+      id: e.courseOfferingId,
+      course_name: e.offering.courseName,
+      course_code: e.offering.courseCode,
+      class_name: e.offering.classCode,
+      start_time: e.startTime,
+      end_time: e.endTime,
+      room_code: e.roomCode,
+      room_name: e.roomName,
+      lecturer_names: e.offering.primaryLecturerName,
+      sks: e.offering.effectiveSks,
+      isConflict: e.conflicts.length > 0,
+      conflictReason: e.conflicts[0]?.title || 'Bentrok',
+      raw: {
+        ...e,
+        day_of_week: e.dayOfWeek,
+        start_minute: e.startMinute,
+        end_minute: e.endMinute,
+      },
+    }));
+  }, [filteredEntries]);
 
   const daysList = [
     { num: 1, name: 'Senin' },
@@ -876,52 +903,16 @@ export const SchedulingSimulatedAnnealingView: React.FC<SchedulingSimulatedAnnea
             </table>
           </div>
         ) : (
-          /* Weekly Grid View */
-          <div className="p-4 grid grid-cols-1 md:grid-cols-5 gap-3">
-            {daysList.map((day) => {
-              const dayEntries = filteredEntries.filter((e) => e.dayOfWeek === day.num);
-              dayEntries.sort((a, b) => a.startMinute - b.startMinute);
-
-              return (
-                <div key={day.num} className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3 flex flex-col">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-2">
-                    <span className="font-bold text-xs text-slate-900">{day.name}</span>
-                    <span className="text-3xs px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-semibold">
-                      {dayEntries.length} kelas
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 flex-1">
-                    {dayEntries.length === 0 ? (
-                      <p className="text-3xs text-slate-400 italic text-center py-6">Tidak ada kelas</p>
-                    ) : (
-                      dayEntries.map((e) => (
-                        <div
-                          key={e.courseOfferingId}
-                          className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-2xs space-y-1 hover:border-blue-300 transition-colors"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-900 truncate">
-                              {e.offering.courseName}
-                            </span>
-                            <span className="text-3xs font-bold text-blue-600 bg-blue-50 px-1 py-0.2 rounded">
-                              {e.offering.classCode}
-                            </span>
-                          </div>
-                          <p className="text-3xs text-slate-500 truncate">{e.offering.primaryLecturerName}</p>
-                          <div className="flex items-center justify-between text-3xs font-mono text-slate-400 pt-1 border-t border-slate-100">
-                            <span>
-                              {e.startTime}-{e.endTime}
-                            </span>
-                            <span className="font-semibold text-slate-700">{e.roomCode}</span>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          /* Weekly Grid View: Apple Weekly Translucent Glass Calendar */
+          <div className="p-2 sm:p-4">
+            <AppleWeeklyCalendar
+              title="Matriks Jadwal Teroptimasi"
+              subtitle="Hasil optimasi Simulated Annealing. Seluruh kelas ditampilkan dengan aksen warna dan alokasi sesi teratur."
+              entries={calendarEntries}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              onResetThisWeek={() => setSelectedDate(new Date())}
+            />
           </div>
         )}
       </div>
