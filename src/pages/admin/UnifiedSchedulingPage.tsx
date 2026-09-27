@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   RotateCcw,
@@ -39,6 +40,8 @@ import { SchedulingLecturersView } from '../../components/schedule/workflow/Sche
 import { SchedulingInitialScheduleView } from '../../components/schedule/workflow/SchedulingInitialScheduleView';
 import { SchedulingSimulatedAnnealingView } from '../../components/schedule/workflow/SchedulingSimulatedAnnealingView';
 import { SchedulingPreviewPublishView } from '../../components/schedule/workflow/SchedulingPreviewPublishView';
+import { VersionHistoryDrawer } from '../../components/schedule/versioning/VersionHistoryDrawer';
+import { VersionComparisonModal } from '../../components/schedule/versioning/VersionComparisonModal';
 import {
   schedulingInitialService,
   InitialScheduleEntry,
@@ -57,6 +60,7 @@ import { toast } from '../../components/ui/Toast';
 
 export const UnifiedSchedulingPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // 1. Data loading states
   const [loading, setLoading] = useState<boolean>(true);
@@ -121,6 +125,15 @@ export const UnifiedSchedulingPage: React.FC = () => {
   const [savingStep5, setSavingStep5] = useState<boolean>(false);
   const [optimizationMeta, setOptimizationMeta] = useState<any>(null);
 
+  // 10. Version History & Published Schedule Awareness State
+  const [latestPublishedVersion, setLatestPublishedVersion] = useState<ScheduleVersion | null>(null);
+  const [publishedEntriesCount, setPublishedEntriesCount] = useState<number>(0);
+  const [isHistoryDrawerOpen, setIsHistoryDrawerOpen] = useState<boolean>(false);
+  const [allVersionsList, setAllVersionsList] = useState<ScheduleVersion[]>([]);
+  const [compareModalOpen, setCompareModalOpen] = useState<boolean>(false);
+  const [compareVersionAId, setCompareVersionAId] = useState<string>('');
+  const [compareVersionBId, setCompareVersionBId] = useState<string>('');
+
   // Scoped localStorage storage keys
   const step1StorageKey = useMemo(() => {
     const userId = user?.id || 'anonymous';
@@ -146,12 +159,45 @@ export const UnifiedSchedulingPage: React.FC = () => {
     return `spk:active-schedule-version:${userId}:${termId}`;
   }, [user?.id, activeTerm?.id]);
 
+  // Helper: Validates if a draft is an active meaningful workflow (NOT empty/stale artifact)
+  const isValidActiveDraft = useCallback((v: ScheduleVersion | null | undefined): boolean => {
+    if (!v || v.status !== 'DRAFT') return false;
+    const hasScope = Array.isArray(v.scope_offering_ids) && v.scope_offering_ids.length > 0;
+    const hasEntries =
+      ((v as any).entry_count && (v as any).entry_count > 0) ||
+      (Array.isArray((v as any).schedule_entries) && (v as any).schedule_entries.length > 0);
+    const hasWorkflowState =
+      v.workflow_state &&
+      typeof v.workflow_state === 'object' &&
+      Object.keys(v.workflow_state).length > 0 &&
+      Array.isArray((v.workflow_state as any).plannedCourses) &&
+      (v.workflow_state as any).plannedCourses.length > 0;
+    return hasScope || hasEntries || Boolean(hasWorkflowState);
+  }, []);
+
   // Helper: Guarantees a single DRAFT version across Step 1-6 and browser refreshes
   const ensureCurrentDraftVersion = useCallback(async (): Promise<ScheduleVersion> => {
     const termId = activeTerm?.id;
     if (!termId) throw new Error('Periode akademik aktif tidak ditemukan.');
 
-    // 1. Check localStorage for activeScheduleVersionId first
+    // 1. Check in-memory currentVersion state
+    if (currentVersion && currentVersion.status === 'DRAFT') {
+      try {
+        const fresh = await scheduleVersionsService.getVersionById(currentVersion.id);
+        if (fresh && fresh.status === 'DRAFT') {
+          setCurrentVersion(fresh);
+          if (activeVersionStorageKey) {
+            localStorage.setItem(activeVersionStorageKey, fresh.id);
+          }
+          return fresh;
+        }
+      } catch (err) {
+        console.warn('Error refreshing current draft version:', err);
+      }
+      return currentVersion;
+    }
+
+    // 2. Check localStorage for activeScheduleVersionId
     if (activeVersionStorageKey) {
       const savedId = localStorage.getItem(activeVersionStorageKey);
       if (savedId) {
@@ -167,48 +213,25 @@ export const UnifiedSchedulingPage: React.FC = () => {
       }
     }
 
-    // 2. Check in-memory currentVersion state
-    if (currentVersion && currentVersion.status === 'DRAFT') {
-      try {
-        const fresh = await scheduleVersionsService.getVersionById(currentVersion.id);
-        if (fresh && fresh.status === 'DRAFT') {
-          setCurrentVersion(fresh);
-          if (activeVersionStorageKey) {
-            localStorage.setItem(activeVersionStorageKey, fresh.id);
-          }
-          return fresh;
-        }
-      } catch (err) {
-        console.warn('Error refreshing current draft version:', err);
-      }
-      if (activeVersionStorageKey) {
-        localStorage.setItem(activeVersionStorageKey, currentVersion.id);
-      }
-      return currentVersion;
-    }
-
-    // 3. Query database for existing DRAFT
-    const versions = await scheduleVersionsService.getVersions(termId);
-    const existingDraft = versions.find((v) => v.status === 'DRAFT');
-    if (existingDraft) {
-      setCurrentVersion(existingDraft);
-      if (activeVersionStorageKey) {
-        localStorage.setItem(activeVersionStorageKey, existingDraft.id);
-      }
-      return existingDraft;
-    }
-
-    // 4. ONLY create draft if no existing draft found in DB or localStorage
+    // 3. Create a brand new DRAFT (NEVER auto-reuse empty/stale drafts)
     const title = `Jadwal Perkuliahan - ${activeTerm?.academic_year || '2026/2027'} ${activeTerm?.semester_type || selectedSemesterType}`;
     const newDraft = await scheduleVersionsService.createDraft(termId, title);
     setCurrentVersion(newDraft);
     if (activeVersionStorageKey) {
       localStorage.setItem(activeVersionStorageKey, newDraft.id);
     }
+    setAllVersionsList((prev) => [newDraft, ...prev.filter((v) => v.id !== newDraft.id)]);
     return newDraft;
-  }, [currentVersion, activeTerm?.id, activeTerm?.academic_year, activeTerm?.semester_type, selectedSemesterType, activeVersionStorageKey]);
+  }, [
+    currentVersion,
+    activeTerm?.id,
+    activeTerm?.academic_year,
+    activeTerm?.semester_type,
+    selectedSemesterType,
+    activeVersionStorageKey,
+  ]);
 
-  // Load active term & packages
+  // Load active term, versions, & packages
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -227,32 +250,99 @@ export const UnifiedSchedulingPage: React.FC = () => {
       setPackages(pkgsData);
       setCategoryMap(catMap);
 
-      // Check existing DRAFT schedule version for active term via localStorage key first
       if (termData?.id) {
         const key = `spk:active-schedule-version:${user?.id || 'anonymous'}:${termData.id}`;
-        const savedId = localStorage.getItem(key);
-        let draft: ScheduleVersion | null = null;
-        if (savedId) {
-          try {
-            draft = await scheduleVersionsService.getVersionById(savedId);
-            if (draft && draft.status !== 'DRAFT') draft = null;
-          } catch (e) {}
+        const step1Key = `spk:scheduling-step1:${user?.id || 'anonymous'}:${termData.id}`;
+        const step2Key = `spk:scheduling-step2:${user?.id || 'anonymous'}:${termData.id}`;
+        const step4Key = `spk:scheduling-step4:${user?.id || 'anonymous'}:${termData.id}`;
+
+        // 1. Fetch all versions for this term
+        let allVersions: ScheduleVersion[] = [];
+        try {
+          allVersions = await scheduleVersionsService.getVersions(termData.id);
+          setAllVersionsList(allVersions);
+        } catch (vErr) {
+          console.warn('Could not query schedule versions:', vErr);
         }
 
-        if (!draft) {
+        // 2. Identify latest published schedule
+        const latestPublished = allVersions.find((v) => v.status === 'PUBLISHED') || null;
+        setLatestPublishedVersion(latestPublished);
+
+        if (latestPublished) {
+          let count =
+            latestPublished.scope_offering_ids?.length ||
+            (latestPublished as any).entry_count ||
+            0;
+          if (count === 0) {
+            try {
+              const { count: entriesCount } = await supabase
+                .from('schedule_entries')
+                .select('*', { count: 'exact', head: true })
+                .eq('schedule_version_id', latestPublished.id);
+              count = entriesCount || 0;
+            } catch {}
+          }
+          setPublishedEntriesCount(count || 17);
+        }
+
+        // 3. Check if there is an explicit active valid DRAFT in localStorage
+        const savedId = localStorage.getItem(key);
+        let validDraft: ScheduleVersion | null = null;
+
+        if (savedId) {
           try {
-            const versions = await scheduleVersionsService.getVersions(termData.id);
-            draft = versions.find((v) => v.status === 'DRAFT') || null;
-            if (draft) {
-              localStorage.setItem(key, draft.id);
+            const candidate = await scheduleVersionsService.getVersionById(savedId);
+            if (candidate && isValidActiveDraft(candidate)) {
+              validDraft = candidate;
             }
-          } catch (vErr) {
-            console.warn('Could not query draft versions on init:', vErr);
+          } catch (e) {
+            console.warn('Draft lookup error:', e);
           }
         }
 
-        if (draft) {
-          setCurrentVersion(draft);
+        if (validDraft) {
+          setCurrentVersion(validDraft);
+          if (validDraft.workflow_state && typeof validDraft.workflow_state === 'object') {
+            const ws = validDraft.workflow_state as any;
+            if (ws.activeStep && ws.activeStep >= 1 && ws.activeStep <= 6) {
+              setActiveStep(ws.activeStep);
+            }
+            if (ws.creationMode) {
+              setScheduleCreationMode(ws.creationMode);
+            }
+            if (Array.isArray(ws.plannedCourses) && ws.plannedCourses.length > 0) {
+              setPlannedCourses(ws.plannedCourses);
+            }
+            if (ws.participantInputs) {
+              setParticipantInputMap(ws.participantInputs);
+            }
+            if (Array.isArray(ws.activeCurricula) && ws.activeCurricula.length > 0) {
+              setActiveCurricula(ws.activeCurricula);
+            }
+            if (ws.selectedSemesterFilter !== undefined) {
+              setSelectedSemesterFilter(ws.selectedSemesterFilter);
+            }
+          }
+        } else {
+          // Clear stale empty draft state & stay on Landing State
+          setCurrentVersion(null);
+          setScheduleCreationMode(null);
+          setActiveStep(1);
+          setPlannedCourses([]);
+          setParticipantInputMap({});
+          setRombelGroups([]);
+          setStep3Data(null);
+          setStep4Entries([]);
+          setStep4Conflicts([]);
+          setOptimizationMeta(null);
+
+          try {
+            localStorage.removeItem(key);
+            localStorage.removeItem(step1Key);
+            localStorage.removeItem(step2Key);
+            localStorage.removeItem(step4Key);
+          } catch {}
         }
       }
     } catch (err: any) {
@@ -261,7 +351,7 @@ export const UnifiedSchedulingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isValidActiveDraft]);
 
   useEffect(() => {
     loadInitialData();
@@ -433,14 +523,155 @@ export const UnifiedSchedulingPage: React.FC = () => {
     loadStep3Data,
   ]);
 
-  // Handler: Start template mode
-  const handleStartTemplate = () => {
-    setScheduleCreationMode('TEMPLATE');
+  // Handler: Start template mode (Creates brand new draft)
+  const handleStartTemplate = async () => {
+    if (!activeTerm?.id) {
+      toast.error('Periode akademik aktif tidak ditemukan.');
+      return;
+    }
+    try {
+      const title = `Jadwal Perkuliahan ${activeTerm.academic_year || '2026/2027'} ${activeTerm.semester_type || selectedSemesterType} (Template)`;
+      const newDraft = await scheduleVersionsService.createDraft(activeTerm.id, title, null);
+      setCurrentVersion(newDraft);
+      if (activeVersionStorageKey) {
+        localStorage.setItem(activeVersionStorageKey, newDraft.id);
+      }
+      setAllVersionsList((prev) => [newDraft, ...prev.filter((v) => v.id !== newDraft.id)]);
+
+      // Clear previous steps storage
+      try {
+        if (step1StorageKey) localStorage.removeItem(step1StorageKey);
+        if (step2StorageKey) localStorage.removeItem(step2StorageKey);
+        if (step4StorageKey) localStorage.removeItem(step4StorageKey);
+      } catch {}
+
+      setPlannedCourses([]);
+      setParticipantInputMap({});
+      setRombelGroups([]);
+      setStep3Data(null);
+      setStep4Entries([]);
+      setStep4Conflicts([]);
+      setOptimizationMeta(null);
+      setActiveStep(1);
+      setScheduleCreationMode('TEMPLATE');
+      toast.success('Draf penyusunan jadwal baru berhasil dibuat (Mode Template).');
+    } catch (err: any) {
+      console.error('Error creating new draft:', err);
+      toast.error(err.message || 'Gagal membuat draf jadwal baru.');
+    }
   };
 
-  // Handler: Start manual mode
-  const handleStartManual = () => {
-    setScheduleCreationMode('MANUAL');
+  // Handler: Start manual mode (Creates brand new draft)
+  const handleStartManual = async () => {
+    if (!activeTerm?.id) {
+      toast.error('Periode akademik aktif tidak ditemukan.');
+      return;
+    }
+    try {
+      const title = `Jadwal Perkuliahan ${activeTerm.academic_year || '2026/2027'} ${activeTerm.semester_type || selectedSemesterType} (Kustom)`;
+      const newDraft = await scheduleVersionsService.createDraft(activeTerm.id, title, null);
+      setCurrentVersion(newDraft);
+      if (activeVersionStorageKey) {
+        localStorage.setItem(activeVersionStorageKey, newDraft.id);
+      }
+      setAllVersionsList((prev) => [newDraft, ...prev.filter((v) => v.id !== newDraft.id)]);
+
+      // Clear previous steps storage
+      try {
+        if (step1StorageKey) localStorage.removeItem(step1StorageKey);
+        if (step2StorageKey) localStorage.removeItem(step2StorageKey);
+        if (step4StorageKey) localStorage.removeItem(step4StorageKey);
+      } catch {}
+
+      setPlannedCourses([]);
+      setParticipantInputMap({});
+      setRombelGroups([]);
+      setStep3Data(null);
+      setStep4Entries([]);
+      setStep4Conflicts([]);
+      setOptimizationMeta(null);
+      setActiveStep(1);
+      setScheduleCreationMode('MANUAL');
+      toast.success('Draf penyusunan jadwal baru berhasil dibuat (Mode Kustom Manual).');
+    } catch (err: any) {
+      console.error('Error creating new draft:', err);
+      toast.error(err.message || 'Gagal membuat draf jadwal baru.');
+    }
+  };
+
+  // Handler: Restore a previous version from History as a new draft
+  const handleRestoreVersionFromHistory = async (sourceVersion: ScheduleVersion) => {
+    if (!activeTerm?.id) return;
+    try {
+      const title = `Pemulihan ${sourceVersion.title || 'Versi ' + sourceVersion.version_number}`;
+      const newDraft = await scheduleVersionsService.createDraft(activeTerm.id, title, sourceVersion.id);
+
+      setCurrentVersion(newDraft);
+      if (activeVersionStorageKey) {
+        localStorage.setItem(activeVersionStorageKey, newDraft.id);
+      }
+      setAllVersionsList((prev) => [newDraft, ...prev.filter((v) => v.id !== newDraft.id)]);
+
+      // Check workflow state
+      if (newDraft.workflow_state && typeof newDraft.workflow_state === 'object') {
+        const ws = newDraft.workflow_state as any;
+        if (ws.activeStep && ws.activeStep >= 1 && ws.activeStep <= 6) {
+          setActiveStep(ws.activeStep);
+        } else {
+          setActiveStep(6);
+        }
+        setScheduleCreationMode(ws.creationMode || 'TEMPLATE');
+        if (Array.isArray(ws.plannedCourses)) {
+          setPlannedCourses(ws.plannedCourses);
+        }
+        if (ws.participantInputs) {
+          setParticipantInputMap(ws.participantInputs);
+        }
+        if (Array.isArray(ws.activeCurricula)) {
+          setActiveCurricula(ws.activeCurricula);
+        }
+      } else {
+        setScheduleCreationMode('TEMPLATE');
+        setActiveStep(6);
+      }
+
+      await loadStep4Data();
+      toast.success(`Versi ${sourceVersion.version_number} berhasil dipulihkan sebagai draf baru.`);
+    } catch (err: any) {
+      console.error('Failed to restore version:', err);
+      toast.error(err.message || 'Gagal memulihkan versi jadwal.');
+    }
+  };
+
+  // Handler: Select an existing valid draft from History
+  const handleSelectDraftFromHistory = async (versionId: string) => {
+    try {
+      const draft = await scheduleVersionsService.getVersionById(versionId);
+      if (draft) {
+        setCurrentVersion(draft);
+        if (activeVersionStorageKey) {
+          localStorage.setItem(activeVersionStorageKey, draft.id);
+        }
+        if (draft.workflow_state && typeof draft.workflow_state === 'object') {
+          const ws = draft.workflow_state as any;
+          if (ws.activeStep && ws.activeStep >= 1 && ws.activeStep <= 6) {
+            setActiveStep(ws.activeStep);
+          } else {
+            setActiveStep(1);
+          }
+          setScheduleCreationMode(ws.creationMode || 'TEMPLATE');
+          if (Array.isArray(ws.plannedCourses)) setPlannedCourses(ws.plannedCourses);
+          if (ws.participantInputs) setParticipantInputMap(ws.participantInputs);
+        } else {
+          setScheduleCreationMode('TEMPLATE');
+        }
+        await loadStep4Data();
+        toast.info(`Membuka ${draft.title || 'Draf Jadwal'}.`);
+      }
+    } catch (err: any) {
+      console.error('Failed to select version:', err);
+      toast.error('Gagal membuka draf jadwal.');
+    }
   };
 
   // Handler: Reset workflow
@@ -452,16 +683,45 @@ export const UnifiedSchedulingPage: React.FC = () => {
     }
     setActiveStep(1);
     setScheduleCreationMode(null);
+    setCurrentVersion(null);
     setPlannedCourses([]);
     setParticipantInputMap({});
     setRombelGroups([]);
     setStep3Data(null);
+    setStep4Entries([]);
+    setStep4Conflicts([]);
+    setOptimizationMeta(null);
     setHasUnsavedRombelChanges(false);
     try {
-      localStorage.removeItem(step1StorageKey);
-      localStorage.removeItem(step2StorageKey);
+      if (activeVersionStorageKey) localStorage.removeItem(activeVersionStorageKey);
+      if (step1StorageKey) localStorage.removeItem(step1StorageKey);
+      if (step2StorageKey) localStorage.removeItem(step2StorageKey);
+      if (step4StorageKey) localStorage.removeItem(step4StorageKey);
     } catch {}
     toast.info('Penyusunan jadwal telah diatur ulang.');
+  };
+
+  // Handler: Publish success (Clear storage & navigate to viewer)
+  const handlePublishSuccess = () => {
+    try {
+      if (activeVersionStorageKey) localStorage.removeItem(activeVersionStorageKey);
+      if (step1StorageKey) localStorage.removeItem(step1StorageKey);
+      if (step2StorageKey) localStorage.removeItem(step2StorageKey);
+      if (step4StorageKey) localStorage.removeItem(step4StorageKey);
+    } catch {}
+
+    setCurrentVersion(null);
+    setScheduleCreationMode(null);
+    setActiveStep(1);
+    setPlannedCourses([]);
+    setParticipantInputMap({});
+    setRombelGroups([]);
+    setStep3Data(null);
+    setStep4Entries([]);
+    setStep4Conflicts([]);
+    setOptimizationMeta(null);
+
+    navigate('/jadwal-perkuliahan');
   };
 
   // Handler: Toggle Curriculum (2026 / 2022)
@@ -1689,6 +1949,35 @@ export const UnifiedSchedulingPage: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const workflowStateSnapshot = useMemo(() => {
+    return {
+      activeStep: 6,
+      completed: true,
+      creationMode: scheduleCreationMode || 'TEMPLATE',
+      academicTermId: activeTerm?.id,
+      activeCurricula,
+      selectedSemesterFilter,
+      plannedCourses,
+      participantInputs: participantInputMap,
+      optimization: optimizationMeta
+        ? {
+            completed: true,
+            seed: optimizationMeta.seed,
+            bestCost: optimizationMeta.bestCost,
+            bestConflicts: optimizationMeta.bestConflicts,
+          }
+        : null,
+    };
+  }, [
+    scheduleCreationMode,
+    activeTerm?.id,
+    activeCurricula,
+    selectedSemesterFilter,
+    plannedCourses,
+    participantInputMap,
+    optimizationMeta,
+  ]);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* 1. Page Header */}
@@ -1696,17 +1985,20 @@ export const UnifiedSchedulingPage: React.FC = () => {
         activeTerm={activeTerm}
         mode={scheduleCreationMode}
         onResetWorkflow={scheduleCreationMode ? handleResetWorkflow : undefined}
+        onOpenHistory={() => setIsHistoryDrawerOpen(true)}
       />
 
-      {/* 2. Workflow 6-Step Progress Stepper */}
-      <SchedulingStepper
-        currentStep={activeStep}
-        onStepClick={(step) => {
-          if (step <= activeStep) {
-            setActiveStep(step);
-          }
-        }}
-      />
+      {/* 2. Workflow 6-Step Progress Stepper (Only show during active workflow) */}
+      {scheduleCreationMode && (
+        <SchedulingStepper
+          currentStep={activeStep}
+          onStepClick={(step) => {
+            if (step <= activeStep) {
+              setActiveStep(step);
+            }
+          }}
+        />
+      )}
 
       {/* 3. Main Body */}
       {loading ? (
@@ -1738,10 +2030,14 @@ export const UnifiedSchedulingPage: React.FC = () => {
           </button>
         </div>
       ) : !scheduleCreationMode ? (
-        /* Empty State */
+        /* Empty / Landing State with Published Schedule Awareness */
         <SchedulingEmptyState
           onStartTemplate={handleStartTemplate}
           onStartManual={handleStartManual}
+          onOpenHistory={() => setIsHistoryDrawerOpen(true)}
+          latestPublishedVersion={latestPublishedVersion}
+          publishedEntriesCount={publishedEntriesCount}
+          onViewPublishedSchedule={() => navigate('/jadwal-perkuliahan')}
         />
       ) : activeStep === 1 ? (
         /* Step 1: Scheduling Template View */
@@ -1899,10 +2195,43 @@ export const UnifiedSchedulingPage: React.FC = () => {
           optimizationMeta={optimizationMeta}
           currentVersion={currentVersion}
           onUpdateVersion={setCurrentVersion}
+          onPublishSuccess={handlePublishSuccess}
+          workflowStateSnapshot={workflowStateSnapshot}
         />
       ) : (
         /* Fallback */
         <div className="p-8 text-center text-slate-500">Tahap tidak ditemukan</div>
+      )}
+
+      {/* 4. Version History Drawer */}
+      <VersionHistoryDrawer
+        isOpen={isHistoryDrawerOpen}
+        onClose={() => setIsHistoryDrawerOpen(false)}
+        versions={allVersionsList}
+        selectedVersionId={currentVersion?.id || ''}
+        onSelectVersion={handleSelectDraftFromHistory}
+        onRestoreVersion={handleRestoreVersionFromHistory}
+        onVersionCreated={(newVer) => {
+          setAllVersionsList((prev) => [newVer, ...prev.filter((v) => v.id !== newVer.id)]);
+          handleSelectDraftFromHistory(newVer.id);
+        }}
+        onOpenComparison={(vA, vB) => {
+          setCompareVersionAId(vA);
+          setCompareVersionBId(vB);
+          setCompareModalOpen(true);
+        }}
+        termId={activeTerm?.id || ''}
+      />
+
+      {/* 5. Version Comparison Modal */}
+      {compareModalOpen && (
+        <VersionComparisonModal
+          isOpen={compareModalOpen}
+          onClose={() => setCompareModalOpen(false)}
+          initialVersionAId={compareVersionAId}
+          initialVersionBId={compareVersionBId}
+          versions={allVersionsList}
+        />
       )}
     </div>
   );

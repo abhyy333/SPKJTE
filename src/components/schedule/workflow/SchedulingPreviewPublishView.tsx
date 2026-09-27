@@ -69,6 +69,8 @@ interface SchedulingPreviewPublishViewProps {
   } | null;
   currentVersion?: ScheduleVersion | null;
   onUpdateVersion?: (version: ScheduleVersion) => void;
+  onPublishSuccess?: () => void;
+  workflowStateSnapshot?: any;
 }
 
 export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishViewProps> = ({
@@ -83,6 +85,8 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
   optimizationMeta,
   currentVersion,
   onUpdateVersion,
+  onPublishSuccess,
+  workflowStateSnapshot,
 }) => {
   const navigate = useNavigate();
 
@@ -799,9 +803,24 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
     setPublishing(true);
 
     try {
+      // 1. Save workflow state snapshot before publishing
+      let currentRev = version.revision;
+      if (workflowStateSnapshot) {
+        try {
+          currentRev = await scheduleVersionsService.saveWorkflowState(
+            version.id,
+            currentRev,
+            workflowStateSnapshot
+          );
+        } catch (wsErr) {
+          console.warn('Could not save workflow state before publish:', wsErr);
+        }
+      }
+
+      // 2. Publish schedule version
       const res = await scheduleVersionsService.publishScheduleVersion(
         version.id,
-        version.revision
+        currentRev
       );
 
       if (res.version) {
@@ -810,7 +829,13 @@ export const SchedulingPreviewPublishView: React.FC<SchedulingPreviewPublishView
 
       setShowPublishModal(false);
       toast.success('Jadwal perkuliahan berhasil diterbitkan secara resmi!');
-      await handleRefresh();
+
+      // 3. Clear workflow & navigate to Schedule Viewer
+      if (onPublishSuccess) {
+        onPublishSuccess();
+      } else {
+        navigate('/jadwal-perkuliahan');
+      }
     } catch (err: any) {
       console.error('Publish error:', err);
       toast.error(err?.message || 'Gagal menerbitkan jadwal resmi.');

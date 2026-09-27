@@ -36,6 +36,9 @@ export const TimeSlotsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'weekly'>('list');
 
+  // Mode Perkuliahan: NORMAL vs RAMADAN
+  const [academicMode, setAcademicMode] = useState<'NORMAL' | 'RAMADAN'>('NORMAL');
+
   // Filters
   const [dayFilter, setDayFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -45,11 +48,11 @@ export const TimeSlotsPage: React.FC = () => {
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
-  // Form Fields
+  // Form Fields (Default Normal Sesi 1: 07:50 - 08:40)
   const [formDayOfWeek, setFormDayOfWeek] = useState<number>(1);
-  const [formStartTime, setFormStartTime] = useState<string>('08:00');
-  const [formEndTime, setFormEndTime] = useState<string>('09:40');
-  const [formLabel, setFormLabel] = useState<string>('Perkuliahan (2 SKS)');
+  const [formStartTime, setFormStartTime] = useState<string>('07:50');
+  const [formEndTime, setFormEndTime] = useState<string>('08:40');
+  const [formLabel, setFormLabel] = useState<string>('Sesi 1 (1 SKS - 50m)');
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
 
   // Delete Confirm Dialog
@@ -93,13 +96,20 @@ export const TimeSlotsPage: React.FC = () => {
 
   const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
 
-  const defaultScheduleMatrix = [
-    { start: '08:00', end: '08:50', sks: 1, type: '1 SKS (50m)' },
-    { start: '08:50', end: '10:30', sks: 2, type: '2 SKS (100m)' },
-    { start: '10:30', end: '11:20', sks: 1, type: '1 SKS (50m)' },
-    { start: '11:20', end: '13:00', isBreak: true, type: 'Istirahat / Sholat' },
-    { start: '13:00', end: '14:40', sks: 2, type: '2 SKS (100m)' },
-    { start: '15:00', end: '17:30', sks: 3, type: '3 SKS (150m)' },
+  // Official Standard Normal Sesi (10 sesi aktif + 2 jeda break)
+  const officialNormalSessions = [
+    { num: 1, start: '07:50', end: '08:40', isBreak: false, label: 'Sesi 1 (50m)' },
+    { num: 2, start: '08:40', end: '09:30', isBreak: false, label: 'Sesi 2 (50m)' },
+    { num: 3, start: '09:30', end: '10:20', isBreak: false, label: 'Sesi 3 (50m)' },
+    { num: 4, start: '10:20', end: '11:10', isBreak: false, label: 'Sesi 4 (50m)' },
+    { num: 5, start: '11:10', end: '12:00', isBreak: false, label: 'Sesi 5 (50m)' },
+    { num: 0, start: '12:00', end: '12:50', isBreak: true, label: 'BREAK 1 (Dzuhur)' },
+    { num: 6, start: '12:50', end: '13:40', isBreak: false, label: 'Sesi 6 (50m)' },
+    { num: 7, start: '13:40', end: '14:30', isBreak: false, label: 'Sesi 7 (50m)' },
+    { num: 8, start: '14:30', end: '15:20', isBreak: false, label: 'Sesi 8 (50m)' },
+    { num: 0, start: '15:20', end: '16:10', isBreak: true, label: 'BREAK 2 (Ashar)' },
+    { num: 9, start: '16:10', end: '17:00', isBreak: false, label: 'Sesi 9 (50m)' },
+    { num: 10, start: '17:00', end: '17:50', isBreak: false, label: 'Sesi 10 (50m)' },
   ];
 
   // Helper to calculate duration on form change
@@ -114,9 +124,9 @@ export const TimeSlotsPage: React.FC = () => {
   const handleOpenCreateModal = () => {
     setEditingSlot(null);
     setFormDayOfWeek(1);
-    setFormStartTime('08:00');
-    setFormEndTime('09:40');
-    setFormLabel('Perkuliahan (2 SKS)');
+    setFormStartTime('07:50');
+    setFormEndTime('08:40');
+    setFormLabel('Sesi 1 (1 SKS - 50m)');
     setFormIsActive(true);
     setModalOpen(true);
   };
@@ -204,17 +214,22 @@ export const TimeSlotsPage: React.FC = () => {
     }
   };
 
-  // Apply Standard Template (Senin s/d Jumat, 08:00 - 17:30)
+  // Apply Standard Normal Template (10 sesi aktif: 07:50 - 17:50, Senin s/d Jumat)
   const handleApplyTemplate = async () => {
     setActionLoading(true);
     try {
+      // 10 active standard sessions per day
       const templates = [
-        { start: '08:00', end: '08:50', label: '1 SKS (50m)' },
-        { start: '08:50', end: '10:30', label: '2 SKS (100m)' },
-        { start: '10:30', end: '11:20', label: '1 SKS (50m)' },
-        { start: '13:00', end: '14:40', label: '2 SKS (100m)' },
-        { start: '13:00', end: '15:30', label: '3 SKS (150m)' },
-        { start: '15:00', end: '17:30', label: '3 SKS (150m)' },
+        { start: '07:50', end: '08:40', label: 'Sesi 1 (1 SKS - 50m)' },
+        { start: '08:40', end: '09:30', label: 'Sesi 2 (1 SKS - 50m)' },
+        { start: '09:30', end: '10:20', label: 'Sesi 3 (1 SKS - 50m)' },
+        { start: '10:20', end: '11:10', label: 'Sesi 4 (1 SKS - 50m)' },
+        { start: '11:10', end: '12:00', label: 'Sesi 5 (1 SKS - 50m)' },
+        { start: '12:50', end: '13:40', label: 'Sesi 6 (1 SKS - 50m)' },
+        { start: '13:40', end: '14:30', label: 'Sesi 7 (1 SKS - 50m)' },
+        { start: '14:30', end: '15:20', label: 'Sesi 8 (1 SKS - 50m)' },
+        { start: '16:10', end: '17:00', label: 'Sesi 9 (1 SKS - 50m)' },
+        { start: '17:00', end: '17:50', label: 'Sesi 10 (1 SKS - 50m)' },
       ];
 
       // Add template slots for Monday - Friday (1 to 5)
@@ -233,7 +248,7 @@ export const TimeSlotsPage: React.FC = () => {
           }
         }
       }
-      toast.success('Template slot perkuliahan berhasil diterapkan.');
+      toast.success('Template 10 Sesi Normal (07:50 – 17:50) berhasil diterapkan.');
       setTemplateConfirmOpen(false);
       loadSlots();
     } catch (err: any) {
@@ -269,7 +284,7 @@ export const TimeSlotsPage: React.FC = () => {
       {/* Page Header */}
       <PageHeader
         title="Slot Waktu"
-        subtitle="Atur periode waktu perkuliahan yang digunakan dalam penjadwalan Jurusan Teknik Elektro"
+        subtitle="Atur periode waktu perkuliahan resmi Jurusan Teknik Elektro (Mode Normal: 07:50 – 17:50)"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -284,7 +299,7 @@ export const TimeSlotsPage: React.FC = () => {
               className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs cursor-pointer"
             >
               <Sparkles className="w-4 h-4 text-blue-500" />
-              Terapkan Template
+              Terapkan Template Standar
             </button>
             <button
               onClick={() => setResetConfirmOpen(true)}
@@ -296,6 +311,57 @@ export const TimeSlotsPage: React.FC = () => {
           </div>
         }
       />
+
+      {/* Mode Perkuliahan Selector & Banner */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                Profil Waktu Operasional
+              </h3>
+              <span className={`px-2 py-0.5 rounded-full text-2xs font-extrabold ${
+                academicMode === 'NORMAL' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {academicMode === 'NORMAL' ? 'Mode Normal (Aktif Default)' : 'Mode Ramadan (Manual)'}
+              </span>
+            </div>
+            <p className="text-2xs text-slate-500 mt-0.5">
+              {academicMode === 'NORMAL'
+                ? '07:50 – 17:50 WIB • 10 Sesi Aktif (50m/SKS) • 2 Periode Istirahat (12:00–12:50 & 15:20–16:10)'
+                : 'Jadwal khusus bulan Ramadan hanya diterapkan jika diaktifkan manual oleh administrator.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAcademicMode('NORMAL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              academicMode === 'NORMAL'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Mode Normal (07:50–17:50)
+          </button>
+          <button
+            type="button"
+            onClick={() => setAcademicMode('RAMADAN')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+              academicMode === 'RAMADAN'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Mode Ramadan
+          </button>
+        </div>
+      </div>
 
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -325,10 +391,10 @@ export const TimeSlotsPage: React.FC = () => {
 
         <StatCard
           title="Waktu Istirahat"
-          value="11:20 – 13:00"
+          value="12:00 & 15:20"
           icon={<Coffee className="w-6 h-6" />}
           iconBgColor="bg-rose-50 text-rose-600"
-          subtitle="jeda Sholat & Istirahat"
+          subtitle="Break 1 (12:00-12:50) & Break 2 (15:20-16:10)"
         />
       </div>
 
@@ -357,7 +423,7 @@ export const TimeSlotsPage: React.FC = () => {
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                Visualisasi Mingguan
+                Visualisasi Mingguan (10 Sesi Normal + 2 Break)
               </button>
             </div>
 
@@ -399,7 +465,7 @@ export const TimeSlotsPage: React.FC = () => {
                 title="Belum Ada Slot Waktu"
                 description="Belum ada slot waktu terdaftar pada sistem atau filter yang dipilih."
                 action={{
-                  label: 'Terapkan Template Standar',
+                  label: 'Terapkan Template 10 Sesi Normal',
                   onClick: () => setTemplateConfirmOpen(true),
                 }}
               />
@@ -482,46 +548,39 @@ export const TimeSlotsPage: React.FC = () => {
               </div>
             )
           ) : (
-            /* Visualisasi Mingguan */
+            /* Visualisasi Mingguan Resmi 10 Sesi + 2 Break */
             <div className="space-y-4">
-              <div className="flex items-center gap-4 text-2xs text-slate-500 pb-2 border-b border-slate-100">
+              <div className="flex flex-wrap items-center gap-4 text-2xs text-slate-500 pb-2 border-b border-slate-100">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-sky-200" /> 1 SKS (50m)
+                  <span className="w-2.5 h-2.5 rounded bg-blue-100 border border-blue-400" /> Sesi Aktif Kuliah (50m)
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-purple-200" /> 2 SKS (100m)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-emerald-200" /> 3 SKS (150m)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded bg-slate-200" /> Istirahat
+                  <span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400" /> Jeda Break 1 (12:00–12:50) & Break 2 (15:20–16:10)
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 overflow-x-auto pb-2">
                 {days.map((day) => (
-                  <div key={day} className="flex items-center gap-3">
-                    <span className="w-16 font-bold text-xs text-slate-700 shrink-0">{day}</span>
-                    <div className="flex-1 grid grid-cols-6 gap-2">
-                      <div className="p-2 bg-sky-100 border border-sky-300 rounded text-center text-3xs font-semibold text-sky-800">
-                        08:00–08:50
-                      </div>
-                      <div className="p-2 bg-purple-100 border border-purple-300 rounded text-center text-3xs font-semibold text-purple-800">
-                        08:50–10:30
-                      </div>
-                      <div className="p-2 bg-sky-100 border border-sky-300 rounded text-center text-3xs font-semibold text-sky-800">
-                        10:30–11:20
-                      </div>
-                      <div className="p-2 bg-slate-100 border border-slate-300 rounded text-center text-3xs font-semibold text-slate-500">
-                        11:20–13:00
-                      </div>
-                      <div className="p-2 bg-purple-100 border border-purple-300 rounded text-center text-3xs font-semibold text-purple-800">
-                        13:00–14:40
-                      </div>
-                      <div className="p-2 bg-emerald-100 border border-emerald-300 rounded text-center text-3xs font-semibold text-emerald-800">
-                        15:00–17:30
-                      </div>
+                  <div key={day} className="flex items-center gap-2 min-w-[760px]">
+                    <span className="w-16 font-bold text-xs text-slate-800 shrink-0">{day}</span>
+                    <div className="flex-1 grid grid-cols-12 gap-1.5 text-center">
+                      {officialNormalSessions.map((sess, sIdx) => (
+                        <div
+                          key={sIdx}
+                          className={`p-1.5 rounded-lg border text-3xs font-semibold ${
+                            sess.isBreak
+                              ? 'bg-amber-50 border-amber-300 text-amber-800'
+                              : 'bg-blue-50 border-blue-200 text-blue-900'
+                          }`}
+                        >
+                          <div className="font-extrabold truncate">
+                            {sess.isBreak ? 'BREAK' : `Sesi ${sess.num}`}
+                          </div>
+                          <div className="font-mono text-4xs opacity-80">
+                            {sess.start}–{sess.end}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -536,33 +595,41 @@ export const TimeSlotsPage: React.FC = () => {
           <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs space-y-3">
             <div className="flex items-center gap-2 text-blue-600">
               <Info className="w-5 h-5 shrink-0" />
-              <h4 className="text-sm font-bold text-slate-800">Aturan Durasi SKS</h4>
+              <h4 className="text-sm font-bold text-slate-800">Aturan Durasi Resmi (Normal)</h4>
             </div>
             <p className="text-xl font-extrabold text-slate-900 tracking-tight">
               1 SKS = 50 menit
             </p>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Durasi slot waktu mengikuti ketentuan sistem kredit semester (SKS) Jurusan Teknik Elektro Universitas Mataram dan digunakan sebagai acuan baku dalam penjadwalan perkuliahan.
+              Hari akademik normal dimulai pukul <strong>07:50</strong> dan berakhir pukul <strong>17:50</strong> WITA dengan total 10 sesi aktif dan 2 jeda istirahat/sholat.
             </p>
           </div>
 
-          {/* Contoh Durasi Slot Card */}
+          {/* Struktur Sesi Perkuliahan Normal */}
           <div className="bg-white rounded-xl border border-slate-200/90 p-5 shadow-xs space-y-3">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Contoh Durasi Standar
+              Struktur Sesi Harian Resmi
             </h4>
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                <span className="font-semibold text-slate-800">1 SKS (50 menit)</span>
-                <span className="font-mono text-slate-600">08:00 – 08:50</span>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-blue-50/70 border border-blue-100">
+                <span className="font-semibold text-blue-900">Sesi 1 – 5 (Pagi)</span>
+                <span className="font-mono text-blue-700">07:50 – 12:00</span>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                <span className="font-semibold text-slate-800">2 SKS (100 menit)</span>
-                <span className="font-mono text-slate-600">08:50 – 10:30</span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                <span className="font-bold">Break 1 (Dzuhur & Makan)</span>
+                <span className="font-mono font-bold">12:00 – 12:50</span>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                <span className="font-semibold text-slate-800">3 SKS (150 menit)</span>
-                <span className="font-mono text-slate-600">13:00 – 15:30</span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-blue-50/70 border border-blue-100">
+                <span className="font-semibold text-blue-900">Sesi 6 – 8 (Siang)</span>
+                <span className="font-mono text-blue-700">12:50 – 15:20</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                <span className="font-bold">Break 2 (Ashar & Istirahat)</span>
+                <span className="font-mono font-bold">15:20 – 16:10</span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-blue-50/70 border border-blue-100">
+                <span className="font-semibold text-blue-900">Sesi 9 – 10 (Sore)</span>
+                <span className="font-mono text-blue-700">16:10 – 17:50</span>
               </div>
             </div>
           </div>
@@ -574,7 +641,7 @@ export const TimeSlotsPage: React.FC = () => {
               <span>Waktu Istirahat & Sholat</span>
             </div>
             <p className="text-2xs text-amber-700 leading-relaxed">
-              Slot istirahat (contoh: 11:20 – 13:00 untuk Sholat Dzuhur dan makan siang) tidak dialokasikan untuk jadwal perkuliahan teori reguler.
+              Dua slot break (12:00–12:50 dan 15:20–16:10) tidak dialokasikan untuk perkuliahan maupun ujian teori reguler guna menjaga waktu ibadah dan istirahat civitas akademika.
             </p>
           </div>
         </div>
@@ -706,8 +773,8 @@ export const TimeSlotsPage: React.FC = () => {
         isOpen={templateConfirmOpen}
         onClose={() => setTemplateConfirmOpen(false)}
         onConfirm={handleApplyTemplate}
-        title="Terapkan Template Slot Waktu"
-        message="Sistem akan menambahkan rangkaian slot perkuliahan standar Jurusan Teknik Elektro (Senin s/d Jumat, 08:00 – 17:30 dengan jeda istirahat). Lanjutkan?"
+        title="Terapkan Template 10 Sesi Normal"
+        message="Sistem akan menambahkan 10 sesi perkuliahan standar Jurusan Teknik Elektro (Senin s/d Jumat, 07:50 – 17:50 dengan 2 jeda break). Lanjutkan?"
         confirmText="Terapkan Sekarang"
         variant="info"
         isLoading={actionLoading}

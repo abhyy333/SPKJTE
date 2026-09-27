@@ -235,6 +235,10 @@ export interface ScheduleVersion {
   status: 'DRAFT' | 'PUBLISHED' | 'REPLACED' | string;
   revision: number;
   scope_offering_ids?: string[] | null;
+  workflow_state?: any;
+  source_version_id?: string | null;
+  source_version?: ScheduleVersion | null;
+  entries_count?: number;
   created_at: string;
   updated_at?: string;
   published_at?: string | null;
@@ -280,8 +284,12 @@ export interface ScheduleEntry {
 }
 
 export interface CurrentPublishedSchedule {
-  id: string;
+  id: string; // Real schedule_entries.id UUID
+  scheduleEntryId?: string;
+  uiKey?: string;
+  schedule_version_id?: string;
   term_id: string;
+  academic_term_id?: string;
   course_id: string;
   course_code: string;
   course_name: string;
@@ -303,6 +311,8 @@ export interface CurrentPublishedSchedule {
   day_of_week?: number;
   course_offering_id?: string;
   course_offering?: any;
+  student_count?: number;
+  expected_students?: number;
 }
 
 export interface ScheduleConflict {
@@ -334,27 +344,134 @@ export interface ScheduleSuggestion {
 
 export interface ExamSession {
   id: string;
-  term_id: string;
-  exam_type: 'UTS' | 'UAS';
-  start_date: string;
-  end_date: string;
+  legacy_id?: string | null;
+  name: string;
+  start_minute: number;
+  end_minute: number;
   is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ExamEntry {
+  id: string;
+  schedule_version_id: string;
+  course_offering_id: string;
+  exam_session_id: string;
+  exam_date: string; // YYYY-MM-DD
+  start_minute: number;
+  duration_minutes: number;
+  end_minute: number;
+  room_ids: string[];
+  room_names?: string[];
+  room_capacity?: number;
+  student_count?: number;
+  lecturer_ids?: string[];
+  lecturer_names?: string[];
+  supervisor_ids?: string[];
+  supervisor_names?: string[];
+  course_name?: string;
+  course_code?: string;
+  class_code?: string;
+  class_keys?: string[];
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ExamDraftEntryInput {
+  course_offering_id: string;
+  exam_session_id: string;
+  exam_date: string; // YYYY-MM-DD
+  duration_minutes: number;
+  room_ids: string[];
+  supervisor_ids: string[];
+  notes?: string | null;
 }
 
 export interface CurrentPublishedExam {
   id: string;
-  exam_type: 'UTS' | 'UAS';
-  date: string;
+  schedule_version_id?: string;
+  course_offering_id?: string;
+  exam_session_id?: string;
+  academic_term_id?: string;
+  term_id?: string;
+  type?: 'UTS' | 'UAS';
+  exam_type?: 'UTS' | 'UAS';
+  date?: string;
+  exam_date?: string;
   day?: string;
-  start_time: string;
-  end_time: string;
+  start_time?: string;
+  end_time?: string;
+  start_minute?: number;
+  end_minute?: number;
+  duration_minutes?: number;
   course_name: string;
   course_code: string;
-  class_name: string;
-  room_code: string;
+  class_name?: string;
+  class_code?: string;
+  class_keys?: string[];
+  room_code?: string;
   room_name?: string;
+  room_ids?: string[];
+  room_names?: string[];
+  room_capacity?: number;
+  student_count?: number;
   proctor_names?: string;
-  status: string;
+  supervisor_names?: string[];
+  supervisor_ids?: string[];
+  lecturer_names?: string[];
+  lecturer_ids?: string[];
+  notes?: string | null;
+  version_number?: string;
+  published_at?: string;
+  status?: string;
+  session_name?: string;
+  semester?: number;
+}
+
+export interface ExamWorkflowConfig {
+  examType: 'UTS' | 'UAS';
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  allowedDays: number[]; // 1=Senin, 2=Selasa, 3=Rabu, 4=Kamis, 5=Jumat, 6=Sabtu
+  defaultDurationMinutes: number;
+  selectedSessionIds: string[];
+}
+
+export interface ExamSourceOffering {
+  schedule_entry_id: string;
+  course_offering_id: string;
+  course_code: string;
+  course_name: string;
+  class_code: string;
+  semester: number;
+  effective_sks: number;
+  student_count: number;
+  required_room_type?: string;
+  primary_lecturer_id: string;
+  primary_lecturer_name: string;
+  preferred_room_id?: string | null;
+  preferred_room_code?: string | null;
+  preferred_room_name?: string | null;
+  preferred_room_capacity?: number | null;
+}
+
+export interface ExamWorkflowState {
+  activeStep: number; // 1 to 5
+  examType: 'UTS' | 'UAS';
+  config: ExamWorkflowConfig;
+  selectedOfferingIds: string[];
+  supervisorAssignments: Record<string, { primaryId: string; secondaryId?: string }>;
+  roomPreferences: Record<string, string[]>; // offeringId -> room_ids[]
+  generationSummary?: {
+    totalExams: number;
+    scheduledExams: number;
+    conflictCount: number;
+    roomsUsedCount: number;
+    supervisorsUsedCount: number;
+  };
+  lastSavedAt?: string;
 }
 
 export interface LecturerCourseAssignment {

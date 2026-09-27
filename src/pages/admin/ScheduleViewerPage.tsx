@@ -26,6 +26,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { timeToMinute, minuteToTime, cn } from '../../lib/utils';
 import { toast } from '../../components/ui/Toast';
+import { PublishedScheduleDetailDrawer } from '../../components/schedule/PublishedScheduleDetailDrawer';
 
 interface DayLaneInfo {
   num: number;
@@ -47,6 +48,15 @@ export const ScheduleViewerPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingRevision, setCreatingRevision] = useState(false);
+
+  // Detail & Smart Rescheduling Drawer state
+  const [selectedSchedule, setSelectedSchedule] = useState<CurrentPublishedSchedule | null>(null);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
+
+  const handleOpenDetail = (item: CurrentPublishedSchedule) => {
+    setSelectedSchedule(item);
+    setIsDetailDrawerOpen(true);
+  };
 
   // View Mode: 'MATRIKS' | 'TABEL'
   const [viewMode, setViewMode] = useState<'MATRIKS' | 'TABEL'>('MATRIKS');
@@ -118,6 +128,8 @@ export const ScheduleViewerPage: React.FC = () => {
     try {
       const termTitle = `Revisi Jadwal Perkuliahan ${activeTerm.semester_type || ''} ${activeTerm.academic_year || ''}`;
       const newDraft = await scheduleVersionsService.createDraft(activeTerm.id, termTitle);
+      const key = `spk:active-schedule-version:${user?.id || 'anonymous'}:${activeTerm.id}`;
+      localStorage.setItem(key, newDraft.id);
       toast.success('Draf revisi jadwal baru berhasil dibuat.');
       navigate('/penyusunan-jadwal');
     } catch (err: any) {
@@ -775,18 +787,19 @@ export const ScheduleViewerPage: React.FC = () => {
 
                     return (
                       <div
-                        key={item.id}
-                        className="group relative z-10 transition-all duration-200 ease-out flex flex-col justify-between overflow-hidden cursor-default"
+                        key={item.uiKey || item.id}
+                        onClick={() => handleOpenDetail(item)}
+                        className="group relative z-10 transition-all duration-200 ease-out flex flex-col justify-between overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-0.5"
                         style={{
                           gridColumn: cardCol,
                           gridRow: `${startRow} / span ${rowSpan}`,
                           margin: '4px 5px',
                           height: 'calc(100% - 8px)',
                           minHeight: 0,
-                          background: 'rgba(238, 246, 255, 0.68)',
+                          background: 'rgba(238, 246, 255, 0.76)',
                           backdropFilter: 'blur(18px) saturate(165%)',
                           WebkitBackdropFilter: 'blur(18px) saturate(165%)',
-                          border: '1px solid rgba(96, 165, 250, 0.32)',
+                          border: '1px solid rgba(96, 165, 250, 0.40)',
                           boxShadow:
                             '0 4px 18px rgba(15, 23, 42, 0.055), inset 0 1px 0 rgba(255, 255, 255, 0.75)',
                           borderRadius: '16px',
@@ -797,7 +810,7 @@ export const ScheduleViewerPage: React.FC = () => {
                         <div className="space-y-1.5">
                           <div className="flex items-start justify-between gap-1.5">
                             <h4
-                              className="text-xs font-bold leading-snug tracking-tight text-slate-900 group-hover:text-blue-950 transition-colors"
+                              className="text-xs font-bold leading-snug tracking-tight text-slate-900 group-hover:text-blue-900 transition-colors"
                               style={{ fontWeight: 680 }}
                             >
                               {item.course_name}
@@ -881,7 +894,11 @@ export const ScheduleViewerPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100/80">
                 {filtered.map((item) => (
-                  <tr key={item.id} className="hover:bg-blue-50/40 transition-colors">
+                  <tr
+                    key={item.uiKey || item.id}
+                    onClick={() => handleOpenDetail(item)}
+                    className="hover:bg-blue-50/60 transition-colors cursor-pointer"
+                  >
                     <td className="py-3.5 px-4 font-bold text-slate-900">{getDayName(item)}</td>
                     <td className="py-3.5 px-4 font-mono font-medium text-slate-600">
                       {item.start_time} – {item.end_time}
@@ -915,6 +932,16 @@ export const ScheduleViewerPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Detail & Smart Rescheduling Drawer */}
+      <PublishedScheduleDetailDrawer
+        isOpen={isDetailDrawerOpen}
+        onClose={() => setIsDetailDrawerOpen(false)}
+        selectedSchedule={selectedSchedule}
+        allSchedules={schedules}
+        activeTerm={activeTerm}
+        isAdmin={role === 'ADMIN'}
+      />
     </div>
   );
 };

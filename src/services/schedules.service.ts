@@ -217,11 +217,17 @@ export const schedulesService = {
 
         const startStr = row.start_time || minuteToTime(startMin);
         const endStr = row.end_time || minuteToTime(endMin);
+        const realScheduleEntryId = row.id || row.schedule_entry_id || row.scheduleEntryId || null;
+        const offeringId = row.course_offering_id || row.offering_id || row.courseOfferingId;
 
         return {
           ...row,
-          id: String(row.id || Math.random()),
+          id: realScheduleEntryId || `published-${offeringId || Math.random()}`,
+          scheduleEntryId: realScheduleEntryId,
+          uiKey: realScheduleEntryId || `preview-${offeringId || Math.random()}`,
+          schedule_version_id: row.schedule_version_id || row.version_id,
           term_id: String(row.term_id || row.academic_term_id || ''),
+          course_offering_id: offeringId,
           course_id: String(row.course_id || ''),
           course_code: String(row.course_code || ''),
           course_name: String(row.course_name || 'Mata Kuliah'),
@@ -248,6 +254,8 @@ export const schedulesService = {
           room_name: String(row.room_name || row.room_code || 'Ruang ?'),
           lecturer_names: row.lecturer_names || '',
           kbk_name: row.kbk_name || '',
+          student_count: Number(row.student_count || row.expected_students || row.course_offering?.expected_students || 40),
+          expected_students: Number(row.expected_students || row.student_count || row.course_offering?.expected_students || 40),
         };
       });
     } catch (err) {

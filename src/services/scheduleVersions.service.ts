@@ -24,33 +24,86 @@ export const scheduleVersionsService = {
       }
 
       const { data, error } = await query;
-      if (!error && data) {
-        return data.map((row: any) => ({
+      let versionRows = data || [];
+      if (error) {
+        // Plain fallback query without foreign key joins if FK join fails
+        let plainQuery = supabase
+          .from('schedule_versions')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (termId && termId !== 'all') {
+          plainQuery = plainQuery.eq('academic_term_id', termId);
+        }
+
+        const { data: plainData } = await plainQuery;
+        versionRows = plainData || [];
+      }
+
+      const versionMap = new Map<string, any>();
+      versionRows.forEach((r: any) => versionMap.set(r.id, r));
+
+      return versionRows.map((row: any) => {
+        const srcVer = row.source_version_id ? versionMap.get(row.source_version_id) : null;
+        return {
           ...row,
           academic_term_id: row.academic_term_id || row.term_id,
           term_id: row.academic_term_id || row.term_id,
-        }));
-      }
-
-      // Plain fallback query without foreign key joins if FK join fails
-      let plainQuery = supabase
-        .from('schedule_versions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (termId && termId !== 'all') {
-        plainQuery = plainQuery.eq('academic_term_id', termId);
-      }
-
-      const { data: plainData } = await plainQuery;
-      return (plainData || []).map((row: any) => ({
-        ...row,
-        academic_term_id: row.academic_term_id || row.term_id,
-        term_id: row.academic_term_id || row.term_id,
-      }));
+          source_version: srcVer ? {
+            ...srcVer,
+            academic_term_id: srcVer.academic_term_id || srcVer.term_id,
+            term_id: srcVer.academic_term_id || srcVer.term_id,
+          } : null,
+        };
+      });
     } catch (err) {
       console.error('Error fetching schedule versions:', err);
       return [];
+    }
+  },
+
+  /**
+   * Save workflow state into schedule_versions via RPC save_schedule_workflow_state
+   */
+  async saveWorkflowState(
+    versionId: string,
+    expectedRevision: number,
+    workflowState: any
+  ): Promise<number> {
+    await assertOwnerAdmin('menyimpan status workflow jadwal');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Koneksi database belum dikonfigurasi.');
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('save_schedule_workflow_state', {
+        p_version_id: versionId,
+        p_expected_revision: expectedRevision,
+        p_state: workflowState,
+      });
+
+      if (error) {
+        console.warn('save_schedule_workflow_state RPC warning/fallback:', error);
+        // Direct table update fallback
+        const { error: updErr } = await supabase
+          .from('schedule_versions')
+          .update({
+            workflow_state: workflowState,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', versionId);
+
+        if (updErr) {
+          console.warn('Direct workflow_state update fallback error:', updErr);
+        }
+        return expectedRevision;
+      }
+
+      const rev = typeof data === 'number' ? data : (data?.revision ?? expectedRevision);
+      return rev;
+    } catch (err) {
+      console.warn('Error saving workflow state:', err);
+      return expectedRevision;
     }
   },
 
@@ -565,6 +618,12 @@ export const scheduleVersionsService = {
     limit: number = 5
   ): Promise<any[]> {
     if (!isSupabaseConfigured() || !entryId) return [];
+
+    // Ensure entryId is a valid UUID to prevent Supabase type error
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entryId);
+    if (!isUuid) {
+      return [];
+    }
 
     try {
       const { data, error } = await supabase.rpc('get_schedule_move_recommendations', {

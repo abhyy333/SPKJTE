@@ -1,13 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   CalendarCheck,
-  Users,
+  Calendar,
+  Clock,
   DoorClosed,
+  Users,
   AlertTriangle,
   Download,
-  Calendar,
-  Layers,
   Sparkles,
+  History,
+  Search,
+  Filter,
+  CheckCircle2,
+  ArrowRight,
+  RotateCcw,
+  BookOpen,
+  ChevronRight,
+  Eye,
+  Plus,
 } from 'lucide-react';
 import { PageHeader } from '../../components/shared/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
@@ -15,182 +25,1009 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { schedulesService } from '../../services/schedules.service';
-import { CurrentPublishedExam } from '../../types';
-import { formatDateIndo } from '../../lib/utils';
+import { toast } from '../../components/ui/Toast';
+
+import { useAuth } from '../../contexts/AuthContext';
+import { useAcademicTerm } from '../../contexts/AcademicTermContext';
+
+import {
+  CurrentPublishedExam,
+  ExamSession,
+  Room,
+  Lecturer,
+  CourseOffering,
+  Course,
+  ScheduleVersion,
+  ExamWorkflowConfig,
+  ExamSourceOffering,
+} from '../../types';
+
+import { examsService } from '../../services/exams.service';
+import { roomsService } from '../../services/rooms.service';
+import { lecturersService } from '../../services/lecturers.service';
+import { courseOfferingsService } from '../../services/courseOfferings.service';
+import {
+  generateExamSchedule,
+  allocateRoomsForExam,
+  ExamGenerationResult,
+  GeneratedExamSlot,
+} from '../../services/examGenerator.service';
+
+import { ExamHistoryModal } from '../../components/exam/ExamHistoryModal';
+import { ExamStepper } from '../../components/exam/workflow/ExamStepper';
+import { ExamActiveHeader } from '../../components/exam/workflow/ExamActiveHeader';
+import { ExamStep1Config } from '../../components/exam/workflow/ExamStep1Config';
+import { ExamStep2Courses } from '../../components/exam/workflow/ExamStep2Courses';
+import { ExamStep3SupervisorsRooms } from '../../components/exam/workflow/ExamStep3SupervisorsRooms';
+import { ExamStep4GenerateMatrix } from '../../components/exam/workflow/ExamStep4GenerateMatrix';
+import { ExamStep5PreviewPublish } from '../../components/exam/workflow/ExamStep5PreviewPublish';
+
+import { formatDateIndo, minuteToTime } from '../../lib/utils';
 
 export const ExamSchedulePage: React.FC = () => {
+  const { role, user, isOwnerAdmin } = useAuth();
+  const { activeTerm } = useAcademicTerm();
+
+  const isAdmin = role === 'ADMIN' || isOwnerAdmin;
+
+  // Mode: 'VIEWER' | 'WORKFLOW'
+  const [mode, setMode] = useState<'VIEWER' | 'WORKFLOW'>('VIEWER');
   const [examType, setExamType] = useState<'UTS' | 'UAS'>('UTS');
-  const [exams, setExams] = useState<CurrentPublishedExam[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Modals state
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  // Published Viewer States
+  const [publishedExams, setPublishedExams] = useState<CurrentPublishedExam[]>([]);
+  const [publishedVersions, setPublishedVersions] = useState<ScheduleVersion[]>([]);
+  const [loadingPublished, setLoadingPublished] = useState(true);
+  const [publishedError, setPublishedError] = useState<string | null>(null);
+
+  // Filters for Published Viewer
+  const [viewerSearch, setViewerSearch] = useState('');
+  const [viewerDateFilter, setViewerDateFilter] = useState('ALL');
+  const [viewerSemesterFilter, setViewerSemesterFilter] = useState('ALL');
+  const [viewerOnlyMySupervision, setViewerOnlyMySupervision] = useState(false);
+
+  // Workflow States
+  const [activeStep, setActiveStep] = useState(1);
+  const [currentDraftVersion, setCurrentDraftVersion] = useState<ScheduleVersion | null>(null);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  // Step 1: Config
+  const [workflowConfig, setWorkflowConfig] = useState<ExamWorkflowConfig>({
+    examType: 'UTS',
+    startDate: '',
+    endDate: '',
+    allowedDays: [1, 2, 3, 4, 5],
+    defaultDurationMinutes: 90,
+    selectedSessionIds: [],
+  });
+
+  // Step 2: Source Offerings from Published Lecture Schedule
+  const [sourceOfferings, setSourceOfferings] = useState<ExamSourceOffering[]>([]);
+  const [loadingSourceOfferings, setLoadingSourceOfferings] = useState(false);
+
+  // Step 3: Supervisors & Room Preferences
+  const [supervisorAssignments, setSupervisorAssignments] = useState<
+    Record<string, { primaryId: string; secondaryId?: string }>
+  >({});
+  const [roomPreferences, setRoomPreferences] = useState<Record<string, string[]>>({});
+
+  // Step 4: Generation Result
+  const [generationResult, setGenerationResult] = useState<ExamGenerationResult | null>(null);
+
+  // Master Data Resources for Workflow
+  const [sessions, setSessions] = useState<ExamSession[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
+  const [loadingResources, setLoadingResources] = useState(false);
+
+  // LocalStorage Key for Draft Persistence
+  const storageKey = useMemo(() => {
+    if (!activeTerm?.id) return null;
+    return `spk:exam-workflow:${user?.id || 'anon'}:${workflowConfig.examType}:${activeTerm.id}`;
+  }, [activeTerm?.id, user?.id, workflowConfig.examType]);
+
+  // ========================================================
+  // LOAD MASTER DATA & SESSIONS (SYNC FROM TIME_SLOTS)
+  // ========================================================
+
+  const loadSessions = useCallback(async () => {
+    if (!activeTerm?.id) return;
+    try {
+      // Sync from lecture time slots to guarantee exact match
+      const data = await examsService.syncExamSessionsFromTimeSlots(activeTerm.id);
+      setSessions(data);
+    } catch (err) {
+      console.warn('Failed to sync/load exam sessions:', err);
+      const fallback = await examsService.getExamSessions();
+      setSessions(fallback);
+    }
+  }, [activeTerm?.id]);
+
+  const loadResources = useCallback(async () => {
+    if (!activeTerm?.id) return;
+    setLoadingResources(true);
+    try {
+      const [roomsData, lecturersData] = await Promise.all([
+        roomsService.getRooms(),
+        lecturersService.getLecturers(),
+      ]);
+
+      setRooms(roomsData);
+      setLecturers(lecturersData);
+    } catch (err: any) {
+      console.error('Error loading workflow resources:', err);
+    } finally {
+      setLoadingResources(false);
+    }
+  }, [activeTerm?.id]);
+
+  // ========================================================
+  // LOAD SOURCE OFFERINGS FROM PUBLISHED LECTURE SCHEDULE
+  // ========================================================
+
+  const loadWorkflowOfferings = useCallback(
+    async (versionId: string, currentRev: number) => {
+      if (!versionId) return;
+      setLoadingSourceOfferings(true);
+      try {
+        // 1. Sync scope from published lecture schedule
+        const scopeResult = await examsService.syncExamScopeFromPublishedLecture(
+          versionId,
+          currentRev
+        );
+        if (scopeResult?.revision) {
+          setCurrentDraftVersion((prev) =>
+            prev ? { ...prev, revision: scopeResult.revision } : prev
+          );
+        }
+
+        // 2. Fetch source offerings
+        const list = await examsService.getExamSourceOfferings(versionId);
+        setSourceOfferings(list);
+
+        // 3. Pre-populate supervisor assignments (Primary lecturer + distinct Secondary lecturer)
+        const currentLecturers = await lecturersService.getLecturers();
+        setSupervisorAssignments((prev) => {
+          const next = { ...prev };
+          const activeLecs = currentLecturers.filter((l: any) => l.is_active !== false && l.status !== 'INACTIVE');
+          list.forEach((item, idx) => {
+            if (!next[item.course_offering_id]) {
+              const eligibleSecondaries = activeLecs.filter(
+                (l) => l.id !== item.primary_lecturer_id
+              );
+              const secondary =
+                eligibleSecondaries.length > 0
+                  ? eligibleSecondaries[idx % eligibleSecondaries.length].id
+                  : item.primary_lecturer_id;
+
+              next[item.course_offering_id] = {
+                primaryId: item.primary_lecturer_id,
+                secondaryId: secondary,
+              };
+            }
+          });
+          return next;
+        });
+
+        // 4. Pre-populate room preferences from lecture schedule
+        setRoomPreferences((prev) => {
+          const next = { ...prev };
+          list.forEach((item) => {
+            if (!next[item.course_offering_id] && item.preferred_room_id) {
+              next[item.course_offering_id] = [item.preferred_room_id];
+            }
+          });
+          return next;
+        });
+      } catch (err: any) {
+        console.error('Error loading exam source offerings:', err);
+        toast.error(err.message || 'Gagal memuat mata kuliah ujian dari jadwal perkuliahan.');
+      } finally {
+        setLoadingSourceOfferings(false);
+      }
+    },
+    []
+  );
+
+  // ========================================================
+  // LOAD PUBLISHED EXAMS & VERSIONS
+  // ========================================================
+
+  const loadPublishedData = useCallback(async () => {
+    if (!activeTerm?.id) return;
+    setLoadingPublished(true);
+    setPublishedError(null);
+    try {
+      const [examsList, versionsList] = await Promise.all([
+        examsService.getPublishedExams(activeTerm.id, examType),
+        examsService.getExamVersions(activeTerm.id, examType),
+      ]);
+
+      setPublishedExams(examsList);
+      setPublishedVersions(versionsList);
+    } catch (err: any) {
+      setPublishedError(err.message || 'Gagal memuat jadwal ujian.');
+    } finally {
+      setLoadingPublished(false);
+    }
+  }, [activeTerm?.id, examType]);
 
   useEffect(() => {
-    async function loadExams() {
-      setLoading(true);
-      setError(null);
-      try {
-        const list = await schedulesService.getPublishedExams(examType);
-        setExams(list);
-      } catch (err: any) {
-        setError(err.message || 'Gagal memuat jadwal ujian.');
-      } finally {
-        setLoading(false);
-      }
+    loadSessions();
+  }, [loadSessions]);
+
+  useEffect(() => {
+    loadPublishedData();
+  }, [loadPublishedData]);
+
+  // ========================================================
+  // WORKFLOW LIFECYCLE & DRAFT RESTORATION
+  // ========================================================
+
+  // Start a new scheduling workflow
+  const handleStartWorkflow = async (type: 'UTS' | 'UAS', copyFromId?: string) => {
+    if (!activeTerm?.id) {
+      toast.error('Periode akademik aktif belum ditemukan.');
+      return;
     }
-    loadExams();
-  }, [examType]);
+
+    await loadResources();
+    await loadSessions();
+
+    // Default dates within reasonable future or active term
+    const today = new Date();
+    const startDefault = new Date(today);
+    startDefault.setDate(today.getDate() + 7);
+    const endDefault = new Date(startDefault);
+    endDefault.setDate(startDefault.getDate() + 12);
+
+    const startStr = startDefault.toISOString().split('T')[0];
+    const endStr = endDefault.toISOString().split('T')[0];
+
+    setWorkflowConfig({
+      examType: type,
+      startDate: startStr,
+      endDate: endStr,
+      allowedDays: [1, 2, 3, 4, 5],
+      defaultDurationMinutes: 90,
+      selectedSessionIds: [],
+    });
+
+    try {
+      // Create backend schedule version draft for this exam
+      const termLabel = activeTerm.academic_year || activeTerm.year || '';
+      const draft = await examsService.createExamDraft(
+        activeTerm.id,
+        type,
+        `Jadwal ${type} ${termLabel}`,
+        copyFromId || null
+      );
+
+      setCurrentDraftVersion(draft);
+      setActiveStep(1);
+      setMode('WORKFLOW');
+
+      // Sync scope and load offerings from published lecture schedule
+      await loadWorkflowOfferings(draft.id, draft.revision);
+
+      toast.success(`Draf alur ${type} berhasil disiapkan.`);
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal memulai penyusunan jadwal ujian.');
+    }
+  };
+
+  // Auto allocate rooms for all source offerings
+  const handleAutoAllocateAllRooms = () => {
+    const newPrefs: Record<string, string[]> = {};
+    sourceOfferings.forEach((offering) => {
+      const students = offering.student_count || 40;
+      const prefIds = offering.preferred_room_id ? [offering.preferred_room_id] : undefined;
+      const alloc = allocateRoomsForExam(
+        students,
+        rooms,
+        prefIds,
+        offering.required_room_type
+      );
+      newPrefs[offering.course_offering_id] = alloc.roomIds;
+    });
+    setRoomPreferences(newPrefs);
+    toast.success('Kombinasi ruangan optimal berhasil dialokasikan untuk seluruh mata kuliah.');
+  };
+
+  // Run initial generator in Step 4
+  const handleRunGenerator = () => {
+    const result = generateExamSchedule({
+      examType: workflowConfig.examType,
+      startDate: workflowConfig.startDate,
+      endDate: workflowConfig.endDate,
+      allowedDays: workflowConfig.allowedDays,
+      defaultDurationMinutes: workflowConfig.defaultDurationMinutes,
+      sessions,
+      offerings: sourceOfferings,
+      rooms,
+      lecturers,
+      supervisorAssignments,
+      roomPreferences,
+    });
+
+    setGenerationResult(result);
+    if (result.summary.conflictCount === 0) {
+      toast.success(`Matriks ${workflowConfig.examType} berhasil digenerate bebas bentrok!`);
+    } else {
+      toast.info(
+        `Matriks ${workflowConfig.examType} digenerate dengan ${result.summary.conflictCount} potensi bentrok.`
+      );
+    }
+  };
+
+  // Save Draft RPC
+  const handleSaveDraft = async () => {
+    if (!currentDraftVersion?.id || !generationResult) return;
+
+    setIsSavingDraft(true);
+    try {
+      // Fetch fresh version to guarantee latest expected revision
+      const fresh = await examsService.getVersionById(currentDraftVersion.id);
+      const expectedRev = fresh?.revision ?? currentDraftVersion.revision;
+
+      const res = await examsService.saveExamDraftEntries(
+        currentDraftVersion.id,
+        expectedRev,
+        generationResult.draftEntriesPayload,
+        `Penyusunan jadwal ${workflowConfig.examType}`
+      );
+
+      if (res.version) {
+        setCurrentDraftVersion(res.version);
+      } else if (res.revision) {
+        setCurrentDraftVersion((prev) => (prev ? { ...prev, revision: res.revision } : prev));
+      }
+
+      toast.success('Draf entri jadwal ujian berhasil disimpan ke database.');
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menyimpan draf ujian.');
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  // Publish Schedule RPC (Single-Execution & Stale-Revision-Free)
+  const handlePublish = async () => {
+    if (isPublishing) return;
+    if (!currentDraftVersion?.id) return;
+
+    setIsPublishing(true);
+    try {
+      // 1. Fetch fresh version directly from database
+      const freshVersion = await examsService.getVersionById(currentDraftVersion.id);
+
+      if (!freshVersion) {
+        throw new Error('Draf jadwal ujian tidak ditemukan di database.');
+      }
+
+      if (freshVersion.status === 'PUBLISHED') {
+        // Already published
+        if (storageKey) localStorage.removeItem(storageKey);
+        setCurrentDraftVersion(null);
+        setGenerationResult(null);
+        setMode('VIEWER');
+        toast.success(`Jadwal ${workflowConfig.examType} resmi berhasil dipublikasikan.`);
+        await loadPublishedData();
+        return;
+      }
+
+      if (freshVersion.status !== 'DRAFT') {
+        throw new Error('Hanya draf jadwal ujian yang dapat diterbitkan.');
+      }
+
+      let revisionToPublish = freshVersion.revision;
+
+      // 2. If entries exist and draft was modified, save them first with fresh revision
+      if (generationResult && generationResult.draftEntriesPayload.length > 0) {
+        const saveRes = await examsService.saveExamDraftEntries(
+          freshVersion.id,
+          revisionToPublish,
+          generationResult.draftEntriesPayload,
+          `Publikasi final ${workflowConfig.examType}`
+        );
+        revisionToPublish = saveRes.revision;
+      }
+
+      // 3. Publish schedule version once with the exact updated revision
+      const published = await examsService.publishExamVersion(
+        freshVersion.id,
+        revisionToPublish
+      );
+
+      // 4. Reset workflow state & navigate to official viewer
+      if (storageKey) localStorage.removeItem(storageKey);
+      setCurrentDraftVersion(null);
+      setGenerationResult(null);
+      setMode('VIEWER');
+
+      toast.success(`Jadwal ${workflowConfig.examType} resmi berhasil dipublikasikan!`);
+      await loadPublishedData();
+    } catch (err: any) {
+      console.error('Publish exam schedule failed:', err);
+
+      // Double-check if version was published despite network timeout
+      try {
+        const check = await examsService.getVersionById(currentDraftVersion.id);
+        if (check && check.status === 'PUBLISHED') {
+          if (storageKey) localStorage.removeItem(storageKey);
+          setCurrentDraftVersion(null);
+          setGenerationResult(null);
+          setMode('VIEWER');
+          toast.success(`Jadwal ${workflowConfig.examType} resmi berhasil dipublikasikan!`);
+          await loadPublishedData();
+          return;
+        } else if (check) {
+          setCurrentDraftVersion(check);
+        }
+      } catch (checkErr) {
+        console.warn('Double check error:', checkErr);
+      }
+
+      const msg = err.message || '';
+      if (msg.includes('STALE_REVISION')) {
+        toast.error('Data jadwal telah berubah. Silakan tekan Terbitkan kembali.');
+      } else {
+        toast.error(err.message || 'Gagal menerbitkan jadwal ujian.');
+      }
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  // Exit workflow safely
+  const handleExitWorkflow = () => {
+    if (window.confirm('Keluar dari alur penyusunan jadwal ujian? Draf yang sudah tersimpan tetap aman.')) {
+      setMode('VIEWER');
+    }
+  };
+
+  // Filtered Published Exams
+  const filteredPublishedExams = useMemo(() => {
+    return publishedExams.filter((item) => {
+      const cName = (item.course_name || '').toLowerCase();
+      const cCode = (item.course_code || '').toLowerCase();
+      const date = item.date || item.exam_date || '';
+
+      if (
+        viewerSearch &&
+        !cName.includes(viewerSearch.toLowerCase()) &&
+        !cCode.includes(viewerSearch.toLowerCase())
+      ) {
+        return false;
+      }
+
+      if (viewerDateFilter !== 'ALL' && date !== viewerDateFilter) {
+        return false;
+      }
+
+      if (viewerSemesterFilter !== 'ALL' && String(item.semester || '') !== viewerSemesterFilter) {
+        return false;
+      }
+
+      if (viewerOnlyMySupervision && user) {
+        const userEmail = (user.email || '').toLowerCase();
+        const proctors = (item.proctor_names || '').toLowerCase();
+        if (!proctors.includes(userEmail)) return false;
+      }
+
+      return true;
+    });
+  }, [
+    publishedExams,
+    viewerSearch,
+    viewerDateFilter,
+    viewerSemesterFilter,
+    viewerOnlyMySupervision,
+    user,
+  ]);
+
+  // Unique published dates for filter dropdown
+  const publishedDates = useMemo(() => {
+    return Array.from(new Set(publishedExams.map((e) => e.date || e.exam_date || ''))).filter(
+      Boolean
+    );
+  }, [publishedExams]);
+
+  // Published status summary
+  const latestPublished = publishedVersions.find((v) => v.status === 'PUBLISHED');
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Jadwal Ujian"
-        subtitle="Sistem Pendukung Keputusan Penjadwalan Ujian Perkuliahan"
-        actions={
-          <div className="flex items-center gap-2">
-            <button className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-xs cursor-pointer">
-              <Sparkles className="w-4 h-4" />
-              Susun Ujian
-            </button>
-            <button className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs">
-              <Download className="w-4 h-4 text-slate-400" />
-              Unduh PDF
-            </button>
-          </div>
-        }
-      />
+      {/* ========================================================
+          MODE 1: PUBLISHED VIEWER & LANDING
+         ======================================================== */}
+      {mode === 'VIEWER' && (
+        <>
+          <PageHeader
+            title="Jadwal Ujian"
+            subtitle="Kelola penyusunan dan publikasi jadwal Ujian Tengah Semester dan Ujian Akhir Semester."
+            actions={
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryModalOpen(true)}
+                      className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <History className="w-4 h-4 text-purple-600" />
+                      Riwayat Versi
+                    </button>
 
-      {/* 4 Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Sesi Ujian"
-          value={exams.length}
-          icon={<CalendarCheck className="w-6 h-6" />}
-          iconBgColor="bg-blue-50 text-blue-600"
-          subtitle={`sesi ujian ${examType}`}
-        />
+                    <button
+                      type="button"
+                      onClick={() => handleStartWorkflow(examType)}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-xs cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Susun Jadwal {examType}
+                    </button>
+                  </>
+                )}
 
-        <StatCard
-          title="Ruangan Digunakan"
-          value={new Set(exams.map((e) => e.room_code)).size || 0}
-          icon={<DoorClosed className="w-6 h-6" />}
-          iconBgColor="bg-purple-50 text-purple-600"
-          subtitle="ruangan kelas & lab"
-        />
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-slate-400" />
+                  Unduh Jadwal
+                </button>
+              </div>
+            }
+          />
 
-        <StatCard
-          title="Status Publikasi"
-          value={exams.length > 0 ? 'Diterbitkan' : 'Belum Ada'}
-          icon={<Calendar className="w-6 h-6" />}
-          iconBgColor="bg-emerald-50 text-emerald-600"
-          subtitle="periode semester aktif"
-        />
-
-        <StatCard
-          title="Jadwal Bentrok"
-          value="0"
-          icon={<AlertTriangle className="w-6 h-6" />}
-          iconBgColor="bg-rose-50 text-rose-600"
-          subtitle="tidak ada bentrok ujian"
-        />
-      </div>
-
-      {/* UTS / UAS Tabs */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
+          {/* UTS & UAS Selection Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div
               onClick={() => setExamType('UTS')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`p-5 rounded-2xl border transition-all cursor-pointer ${
                 examType === 'UTS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-blue-50/50 border-blue-400/80 shadow-md ring-2 ring-blue-500/20'
+                  : 'bg-white/80 border-slate-200/80 hover:bg-slate-50 shadow-xs'
               }`}
             >
-              Ujian Tengah Semester (UTS)
-            </button>
-            <button
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-black text-sm shadow-xs">
+                    UTS
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Ujian Tengah Semester</h3>
+                    <p className="text-2xs text-slate-500">
+                      {activeTerm ? `${activeTerm.academic_year || activeTerm.year} (${activeTerm.semester_type || activeTerm.term})` : 'Periode Semester Aktif'}
+                    </p>
+                  </div>
+                </div>
+                <StatusBadge
+                  label={
+                    publishedVersions.some((v) => v.type === 'UTS' && v.status === 'PUBLISHED')
+                      ? 'Diterbitkan'
+                      : publishedVersions.some((v) => v.type === 'UTS' && v.status === 'DRAFT')
+                      ? 'Draft'
+                      : 'Belum Disusun'
+                  }
+                />
+              </div>
+            </div>
+
+            <div
               onClick={() => setExamType('UAS')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              className={`p-5 rounded-2xl border transition-all cursor-pointer ${
                 examType === 'UAS'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  ? 'bg-blue-50/50 border-blue-400/80 shadow-md ring-2 ring-blue-500/20'
+                  : 'bg-white/80 border-slate-200/80 hover:bg-slate-50 shadow-xs'
               }`}
             >
-              Ujian Akhir Semester (UAS)
-            </button>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center font-black text-sm shadow-xs">
+                    UAS
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Ujian Akhir Semester</h3>
+                    <p className="text-2xs text-slate-500">
+                      {activeTerm ? `${activeTerm.academic_year || activeTerm.year} (${activeTerm.semester_type || activeTerm.term})` : 'Periode Semester Aktif'}
+                    </p>
+                  </div>
+                </div>
+                <StatusBadge
+                  label={
+                    publishedVersions.some((v) => v.type === 'UAS' && v.status === 'PUBLISHED')
+                      ? 'Diterbitkan'
+                      : publishedVersions.some((v) => v.type === 'UAS' && v.status === 'DRAFT')
+                      ? 'Draft'
+                      : 'Belum Disusun'
+                  }
+                />
+              </div>
+            </div>
           </div>
-          <span className="text-2xs text-slate-400 font-medium">Ganjil 2024/2025</span>
-        </div>
 
-        {error && (
-          <div className="p-4">
-            <ErrorState message={error} />
-          </div>
-        )}
+          {/* 4 Stat Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title={`Total Sesi ${examType}`}
+              value={publishedExams.length}
+              icon={<CalendarCheck className="w-6 h-6" />}
+              iconBgColor="bg-blue-50 text-blue-600"
+              subtitle={`mata kuliah terbit`}
+            />
 
-        {loading && <LoadingState type="table-skeleton" rows={5} />}
+            <StatCard
+              title="Ruangan Digunakan"
+              value={new Set(publishedExams.map((e) => e.room_code)).size || 0}
+              icon={<DoorClosed className="w-6 h-6" />}
+              iconBgColor="bg-purple-50 text-purple-600"
+              subtitle="ruang kelas & ujian"
+            />
 
-        {!loading && !error && exams.length === 0 && (
-          <div className="p-8">
-            <EmptyState
-              icon={<CalendarCheck className="w-8 h-8 text-slate-400" />}
-              title={`Belum ada jadwal ${examType} yang diterbitkan`}
-              description={`Jadwal ${examType} resmi akan ditampilkan setelah disusun dan dipublikasikan oleh bagian akademik jurusan.`}
+            <StatCard
+              title="Pengawas Bertugas"
+              value={
+                new Set(
+                  publishedExams.flatMap((e) =>
+                    (e.proctor_names || '').split(',').map((p) => p.trim())
+                  )
+                ).size || 0
+              }
+              icon={<Users className="w-6 h-6" />}
+              iconBgColor="bg-emerald-50 text-emerald-600"
+              subtitle="dosen pengampu & pengawas"
+            />
+
+            <StatCard
+              title="Status Jadwal"
+              value={publishedExams.length > 0 ? 'Resmi Terbit' : 'Belum Ada'}
+              icon={<Calendar className="w-6 h-6" />}
+              iconBgColor="bg-slate-50 text-slate-600"
+              subtitle={latestPublished?.title || 'Periode Aktif'}
             />
           </div>
-        )}
 
-        {!loading && !error && exams.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-2xs">
-                <tr>
-                  <th className="py-3 px-4 w-12 text-center">No</th>
-                  <th className="py-3 px-4">Tanggal & Hari</th>
-                  <th className="py-3 px-4">Waktu</th>
-                  <th className="py-3 px-4">Mata Kuliah</th>
-                  <th className="py-3 px-3 text-center">Kelas</th>
-                  <th className="py-3 px-4">Ruangan</th>
-                  <th className="py-3 px-4">Pengawas</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {exams.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="py-3 px-4 text-center text-slate-400">{idx + 1}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
-                      {formatDateIndo(item.date)}
-                    </td>
-                    <td className="py-3 px-4 font-mono font-medium text-slate-700">
-                      {item.start_time} – {item.end_time}
-                    </td>
-                    <td className="py-3 px-4">
-                      <p className="font-bold text-slate-800">{item.course_name}</p>
-                      <span className="text-2xs text-slate-400">{item.course_code}</span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className="px-2 py-0.5 rounded font-bold bg-blue-50 text-blue-700 text-xs">
-                        {item.class_name}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
-                      {item.room_code || 'R. Ujian'}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600">
-                      {item.proctor_names || 'Tim Dosen Pengawas'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge label={item.status || 'Terjadwal'} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Published Table / Empty State Container */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden space-y-4 p-5">
+            {/* Filter Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Cari kode atau nama mata kuliah..."
+                    value={viewerSearch}
+                    onChange={(e) => setViewerSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={viewerDateFilter}
+                  onChange={(e) => setViewerDateFilter(e.target.value)}
+                  className="px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-medium text-slate-700"
+                >
+                  <option value="ALL">Semua Tanggal</option>
+                  {publishedDates.map((d) => (
+                    <option key={d} value={d}>
+                      {formatDateIndo(d)}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={viewerSemesterFilter}
+                  onChange={(e) => setViewerSemesterFilter(e.target.value)}
+                  className="px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-medium text-slate-700"
+                >
+                  <option value="ALL">Semua Semester</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                    <option key={s} value={String(s)}>
+                      Semester {s}
+                    </option>
+                  ))}
+                </select>
+
+                {role === 'DOSEN' && (
+                  <button
+                    type="button"
+                    onClick={() => setViewerOnlyMySupervision(!viewerOnlyMySupervision)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all ${
+                      viewerOnlyMySupervision
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Jadwal Pengawasan Saya
+                  </button>
+                )}
+
+                {isAdmin && latestPublished && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartWorkflow(examType, latestPublished.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Buat Revisi Jadwal
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {publishedError && <ErrorState message={publishedError} />}
+
+            {loadingPublished && <LoadingState type="table-skeleton" rows={6} />}
+
+            {!loadingPublished && !publishedError && publishedExams.length === 0 && (
+              <div className="py-12 px-6 text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-xs">
+                  <CalendarCheck className="w-7 h-7" />
+                </div>
+                <div className="max-w-md mx-auto">
+                  <h3 className="text-base font-black text-slate-900">
+                    Belum Ada Jadwal {examType} yang Diterbitkan
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Jadwal resmi {examType} untuk periode semester ini belum dipublikasikan oleh bagian akademik jurusan.
+                  </p>
+                </div>
+
+                {isAdmin && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleStartWorkflow(examType)}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Mulai Susun Jadwal {examType}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!loadingPublished && !publishedError && publishedExams.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-2xs">
+                    <tr>
+                      <th className="py-3 px-4 w-12 text-center">No</th>
+                      <th className="py-3 px-4">Tanggal Pelaksanaan</th>
+                      <th className="py-3 px-4">Waktu Ujian</th>
+                      <th className="py-3 px-4">Mata Kuliah</th>
+                      <th className="py-3 px-3 text-center">Kelas</th>
+                      <th className="py-3 px-4">Ruangan</th>
+                      <th className="py-3 px-4">Dosen Pengawas</th>
+                      <th className="py-3 px-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredPublishedExams.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-blue-50/40 transition-colors">
+                        <td className="py-3 px-4 text-center text-slate-400">{idx + 1}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {formatDateIndo(item.date || item.exam_date || '')}
+                        </td>
+                        <td className="py-3 px-4 font-mono font-medium text-slate-700">
+                          {item.start_time} – {item.end_time}
+                        </td>
+                        <td className="py-3 px-4">
+                          <p className="font-bold text-slate-900">{item.course_name}</p>
+                          <span className="text-2xs font-mono text-slate-400">
+                            {item.course_code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-800 text-2xs">
+                            {item.class_name || item.class_code || 'A'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-slate-800">
+                          {item.room_name || item.room_code || 'R. Ujian'}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700">
+                          {item.proctor_names ||
+                            (item.supervisor_names && item.supervisor_names.join(', ')) ||
+                            'Tim Dosen Pengawas'}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <StatusBadge label={item.status || 'Terjadwal'} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {/* ========================================================
+          MODE 2: 5-STAGE EXAM SCHEDULING WORKFLOW
+         ======================================================== */}
+      {mode === 'WORKFLOW' && (
+        <div className="space-y-6">
+          <ExamActiveHeader
+            activeTerm={activeTerm}
+            examType={workflowConfig.examType}
+            onOpenHistory={() => setIsHistoryModalOpen(true)}
+            onExitWorkflow={handleExitWorkflow}
+            onResetWorkflow={() => handleStartWorkflow(workflowConfig.examType)}
+          />
+
+          <ExamStepper
+            currentStep={activeStep}
+            onStepClick={(stepNumber) => setActiveStep(stepNumber)}
+          />
+
+          {/* Workflow Stage Components */}
+          {activeStep === 1 && (
+            <ExamStep1Config
+              activeTerm={activeTerm}
+              config={workflowConfig}
+              onChangeConfig={(updated) =>
+                setWorkflowConfig((prev) => ({ ...prev, ...updated }))
+              }
+              sessions={sessions}
+              onNext={() => setActiveStep(2)}
+              isDraftLocked={Boolean(currentDraftVersion)}
+            />
+          )}
+
+          {activeStep === 2 && (
+            <ExamStep2Courses
+              examType={workflowConfig.examType}
+              sourceOfferings={sourceOfferings}
+              rooms={rooms}
+              isLoading={loadingSourceOfferings}
+              onRefreshSource={() =>
+                currentDraftVersion
+                  ? loadWorkflowOfferings(
+                      currentDraftVersion.id,
+                      currentDraftVersion.revision
+                    )
+                  : Promise.resolve()
+              }
+              onNext={() => {
+                // Pre-populate room preferences & supervisors if needed
+                if (Object.keys(roomPreferences).length === 0) {
+                  handleAutoAllocateAllRooms();
+                }
+                setActiveStep(3);
+              }}
+              onBack={() => setActiveStep(1)}
+            />
+          )}
+
+          {activeStep === 3 && (
+            <ExamStep3SupervisorsRooms
+              sourceOfferings={sourceOfferings}
+              rooms={rooms}
+              lecturers={lecturers}
+              supervisorAssignments={supervisorAssignments}
+              roomPreferences={roomPreferences}
+              onChangeSupervisor={(offeringId, assignment) =>
+                setSupervisorAssignments((prev) => ({
+                  ...prev,
+                  [offeringId]: assignment,
+                }))
+              }
+              onChangeRoomPreference={(offeringId, roomIds) =>
+                setRoomPreferences((prev) => ({
+                  ...prev,
+                  [offeringId]: roomIds,
+                }))
+              }
+              onAutoAllocateAllRooms={handleAutoAllocateAllRooms}
+              onNext={() => {
+                handleRunGenerator();
+                setActiveStep(4);
+              }}
+              onBack={() => setActiveStep(2)}
+            />
+          )}
+
+          {activeStep === 4 && (
+            <ExamStep4GenerateMatrix
+              examType={workflowConfig.examType}
+              config={workflowConfig}
+              sessions={sessions}
+              rooms={rooms}
+              lecturers={lecturers}
+              offerings={sourceOfferings}
+              generationResult={generationResult}
+              onGenerate={handleRunGenerator}
+              onUpdateSlots={(updatedSlots) => {
+                if (generationResult) {
+                  setGenerationResult({
+                    ...generationResult,
+                    slots: updatedSlots,
+                    draftEntriesPayload: updatedSlots.map((s) => {
+                      let finalSups = [...s.supervisorIds];
+                      if (finalSups.length === 1) {
+                        const fallback = lecturers.find((l) => l.id !== finalSups[0]);
+                        if (fallback) finalSups.push(fallback.id);
+                        else if (lecturers.length > 0) finalSups.push(lecturers[0].id);
+                      }
+                      return {
+                        course_offering_id: s.courseOfferingId,
+                        exam_session_id: s.sessionId,
+                        exam_date: s.examDate,
+                        duration_minutes: s.durationMinutes,
+                        room_ids: s.roomIds,
+                        supervisor_ids: finalSups.slice(0, 2),
+                        notes: null,
+                      };
+                    }),
+                    summary: {
+                      ...generationResult.summary,
+                      conflictCount: updatedSlots.filter((s) => s.isConflict).length,
+                    },
+                  });
+                }
+              }}
+              onSaveDraft={handleSaveDraft}
+              isSaving={isSavingDraft}
+              currentVersion={currentDraftVersion}
+              onNext={() => setActiveStep(5)}
+              onBack={() => setActiveStep(3)}
+            />
+          )}
+
+          {activeStep === 5 && (
+            <ExamStep5PreviewPublish
+              examType={workflowConfig.examType}
+              activeTerm={activeTerm}
+              currentVersion={currentDraftVersion}
+              slots={generationResult?.slots || []}
+              sessions={sessions}
+              rooms={rooms}
+              lecturers={lecturers}
+              onPublish={handlePublish}
+              isPublishing={isPublishing}
+              onBack={() => setActiveStep(4)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ========================================================
+          MODALS: HISTORY
+         ======================================================== */}
+      {activeTerm?.id && (
+        <ExamHistoryModal
+          isOpen={isHistoryModalOpen}
+          onClose={() => setIsHistoryModalOpen(false)}
+          termId={activeTerm.id}
+          examType={examType}
+          onRestoreVersion={(newDraft) => {
+            setCurrentDraftVersion(newDraft);
+            setWorkflowConfig((prev) => ({
+              ...prev,
+              examType: (newDraft.type as any) || examType,
+            }));
+            loadResources();
+            loadSessions();
+            loadWorkflowOfferings(newDraft.id, newDraft.revision);
+            setActiveStep(1);
+            setMode('WORKFLOW');
+          }}
+        />
+      )}
     </div>
   );
 };
